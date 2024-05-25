@@ -18,7 +18,11 @@ class PiKVMDataUpdateCoordinator(DataUpdateCoordinator):
     def __init__(self, hass: HomeAssistant, url: str, username: str, password: str):
         """Initialize."""
         self.hass = hass
-        self.url = url
+        if (not url.startswith("http://")):
+            self.url = "https://"+url
+        else:
+            self.url=url;
+        
         self.auth = HTTPBasicAuth(username, password)
         super().__init__(
             hass,
