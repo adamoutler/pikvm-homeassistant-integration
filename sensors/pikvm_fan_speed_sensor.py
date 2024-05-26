@@ -2,27 +2,23 @@ from homeassistant.components.sensor import SensorEntity
 import logging
 
 _LOGGER = logging.getLogger(__name__)
+"""PiKVM Fan Speed Sensor."""
+from .sensor import PiKVMBaseSensor
 
-class PiKVMFanSpeedSensor(SensorEntity):
+
+
+class PiKVMFanSpeedSensor(PiKVMBaseSensor):
     """Representation of a Fan Speed Sensor."""
 
-    def __init__(self, coordinator, device_info):
+    def __init__(self, coordinator, device_info, serial_number):
         """Initialize the sensor."""
-        self.coordinator = coordinator
-        self._attr_device_info = device_info
-        self._attr_name = "PiKVM Fan Speed"
-        self._attr_unique_id = "pikvm_fan_speed"
-        _LOGGER.debug("Initialized PiKVM Fan Speed sensor: %s", self._attr_name)
+        super().__init__(coordinator, device_info, serial_number, "fan_speed", "PiKVM Fan Speed", "%")
 
     @property
     def state(self):
         """Return the state of the sensor."""
-        try:
-            return self.coordinator.data["fan"]["state"]["fan"]["speed"]
-        except KeyError as e:
-            _LOGGER.error("Key error accessing Fan Speed data: %s", e)
-            return None
-
+        return self.coordinator.data["fan"]["state"]["fan"]["speed"]
+  
     @property
     def extra_state_attributes(self):
         """Return the state attributes."""

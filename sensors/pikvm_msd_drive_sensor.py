@@ -28,7 +28,8 @@ class PiKVMSDDriveSensor(SensorEntity):
         """Return the state attributes."""
         attributes = {"ip": self.coordinator.url}
         try:
-            attributes.update(self.coordinator.data["msd"]["drive"]["image"])
+            if self.coordinator.data["msd"]["drive"]["image"] != None:
+                attributes.update(self.coordinator.data["msd"]["drive"]["image"])
         except KeyError as e:
             _LOGGER.error("Key error accessing MSD drive attributes: %s", e)
         return attributes

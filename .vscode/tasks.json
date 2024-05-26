@@ -1,0 +1,19 @@
+{
+    // See https://go.microsoft.com/fwlink/?LinkId=733558
+    // for the documentation about the tasks.json format
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "Restart HA",
+            "type": "shell",
+            "command": "docker restart homeassistant",
+            "problemMatcher": []
+        },
+        {
+            "label": "logs",
+            "type": "shell",
+            "command": "docker logs homeassistant|tail -f",
+            "problemMatcher": []
+        }
+    ]
+}

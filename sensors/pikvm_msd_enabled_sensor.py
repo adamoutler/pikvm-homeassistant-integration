@@ -27,10 +27,13 @@ class PiKVMSDEnabledSensor(SensorEntity):
     def extra_state_attributes(self):
         """Return the state attributes."""
         attributes = {"ip": self.coordinator.url}
-        try:
-            attributes.update(self.coordinator.data["msd"]["drive"]["image"])
-        except KeyError as e:
-            _LOGGER.error("Key error accessing MSD enabled attributes: %s", e)
+        image_data = self.coordinator.data["msd"]["drive"].get("image")
+        if image_data:
+            try:
+                attributes.update(image_data)
+            except KeyError as e:
+                _LOGGER.error("Key error accessing MSD enabled attributes: %s", e)
+        
         return attributes
 
     async def async_update(self):
