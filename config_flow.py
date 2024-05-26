@@ -6,6 +6,7 @@ import requests
 from requests.auth import HTTPBasicAuth
 import functools
 import logging
+import re
 
 from .const import DOMAIN, CONF_URL, CONF_USERNAME, CONF_PASSWORD, DEFAULT_USERNAME, DEFAULT_PASSWORD
 
@@ -16,13 +17,20 @@ MAC_FILTER_PREFIXES = [
 
 _LOGGER = logging.getLogger(__name__)
 
+def format_url(input_url):
+    """Ensure the URL is properly formatted."""
+    if not re.match(r'^https?://', input_url):
+        input_url = f"https://{input_url}"
+    return input_url.rstrip('/')
+
 async def is_pikvm_device(hass, url, username, password):
     """Check if the device is a PiKVM."""
     try:
+        url = format_url(url)
         _LOGGER.debug("Checking PiKVM device at %s with username %s", url, username)
         response = await hass.async_add_executor_job(
             functools.partial(
-                requests.get, url, auth=HTTPBasicAuth(username, password), verify=False
+                requests.get, f"{url}/api/info", auth=HTTPBasicAuth(username, password), verify=False
             )
         )
         _LOGGER.debug("Received response: %s", response.text)
@@ -52,10 +60,7 @@ class PiKVMConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 vol.Optional(CONF_PASSWORD, default=DEFAULT_PASSWORD): str,
             }))
 
-        # Prepend https:// to the URL if not already present
-        url = user_input[CONF_URL]
-        if not url.startswith("https://"):
-            url = f"https://{url}"
+        url = format_url(user_input[CONF_URL])
         user_input[CONF_URL] = url
 
         username = user_input.get(CONF_USERNAME, DEFAULT_USERNAME)
@@ -63,7 +68,7 @@ class PiKVMConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
         _LOGGER.debug("Manual setup with URL %s, username %s", url, username)
 
-        if await is_pikvm_device(self.hass, f"{url}/api/info", username, password):
+        if await is_pikvm_device(self.hass, url, username, password):
             _LOGGER.debug("PiKVM device successfully found at %s", url)
             return self.async_create_entry(title="PiKVM", data=user_input)
         else:
@@ -93,14 +98,14 @@ class PiKVMConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             _LOGGER.debug("Checking if MAC address %s starts with %s", mac_address, prefix)
 
         if any(mac_address.startswith(prefix) for prefix in MAC_FILTER_PREFIXES):
-            url = f"https://{ip_address}/api/info"
+            url = f"https://{ip_address}"
             _LOGGER.debug("Device MAC matches filter, checking PiKVM at %s", url)
             if await is_pikvm_device(self.hass, url, DEFAULT_USERNAME, DEFAULT_PASSWORD):
                 _LOGGER.debug("PiKVM device found at %s", url)
                 return self.async_create_entry(
                     title="PiKVM",
                     data={
-                        CONF_URL: f"https://{ip_address}",
+                        CONF_URL: url,
                         CONF_USERNAME: DEFAULT_USERNAME,
                         CONF_PASSWORD: DEFAULT_PASSWORD
                     }
@@ -110,7 +115,7 @@ class PiKVMConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 return self.async_show_form(
                     step_id="user",
                     data_schema=vol.Schema({
-                        vol.Required(CONF_URL, default=f"https://{ip_address}"): str,
+                        vol.Required(CONF_URL, default=url): str,
                         vol.Required(CONF_USERNAME): str,
                         vol.Required(CONF_PASSWORD): str,
                     }),

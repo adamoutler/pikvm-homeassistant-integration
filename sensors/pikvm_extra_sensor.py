@@ -1,34 +1,31 @@
-from homeassistant.components.sensor import SensorEntity
-import logging
+"""PiKVM Extra Sensor."""
+from ..sensor import PiKVMBaseSensor
 
-_LOGGER = logging.getLogger(__name__)
+class PiKVMExtraSensor(PiKVMBaseSensor):
+    """Representation of a PiKVM extra sensor."""
 
-class PiKVMExtraSensor(SensorEntity):
-    """Representation of an Extra Sensor."""
+    ICONS = {
+        "ipmi": "mdi:network",
+        "janus": "mdi:web",
+        "janus_static": "mdi:web",
+        "vnc": "mdi:monitor",
+        "webterm": "mdi:console"
+    }
 
-    def __init__(self, coordinator, extra_name, extra_data, device_info):
-        """Initialize the extra sensor."""
-        self.coordinator = coordinator
-        self._extra_name = extra_name
-        self._extra_data = extra_data
-        self._attr_device_info = device_info
-        self._attr_name = f"PiKVM {extra_name}"
-        self._attr_unique_id = f"pikvm_extra_{extra_name.lower()}"
-        _LOGGER.debug("Initialized PiKVM extra sensor: %s", self._attr_name)
+    def __init__(self, coordinator, name, data, device_info, unique_id_base):
+        """Initialize the sensor."""
+        icon = self.ICONS.get(name, "mdi:information")
+        super().__init__(coordinator, device_info, unique_id_base, f"extra_{name}", f"PiKVM {name.capitalize()}", icon=icon)
+        self._data = data
 
     @property
     def state(self):
-        """Return the state of the extra sensor."""
-        return self._extra_data["enabled"]
+        """Return the state of the sensor."""
+        return self._data["enabled"]
 
     @property
     def extra_state_attributes(self):
         """Return the state attributes."""
-        attributes = {"ip": self.coordinator.url}
-        attributes.update(self._extra_data)
+        attributes = super().extra_state_attributes
+        attributes.update(self._data)
         return attributes
-
-    async def async_update(self):
-        """Update PiKVM entity."""
-        _LOGGER.debug("Updating PiKVM extra sensor: %s", self._attr_name)
-        await self.coordinator.async_request_refresh()

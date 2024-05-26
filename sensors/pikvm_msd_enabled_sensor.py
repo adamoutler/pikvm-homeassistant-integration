@@ -1,42 +1,14 @@
-from homeassistant.components.sensor import SensorEntity
-import logging
+"""PiKVM MSD Enabled Sensor."""
+from ..sensor import PiKVMBaseSensor
 
-_LOGGER = logging.getLogger(__name__)
+class PiKVMSDEnabledSensor(PiKVMBaseSensor):
+    """Representation of a PiKVM MSD enabled sensor."""
 
-class PiKVMSDEnabledSensor(SensorEntity):
-    """Representation of MSD Enabled Sensor."""
-
-    def __init__(self, coordinator, device_info):
+    def __init__(self, coordinator, device_info, unique_id_base):
         """Initialize the sensor."""
-        self.coordinator = coordinator
-        self._attr_device_info = device_info
-        self._attr_name = "PiKVM MSD Enabled"
-        self._attr_unique_id = "pikvm_msd_enabled"
-        _LOGGER.debug("Initialized PiKVM MSD Enabled sensor: %s", self._attr_name)
+        super().__init__(coordinator, device_info, unique_id_base, "msd_enabled", "PiKVM MSD Enabled", icon="mdi:check-circle")
 
     @property
     def state(self):
         """Return the state of the sensor."""
-        try:
-            return self.coordinator.data["msd"]["enabled"]
-        except KeyError as e:
-            _LOGGER.error("Key error accessing MSD enabled data: %s", e)
-            return None
-
-    @property
-    def extra_state_attributes(self):
-        """Return the state attributes."""
-        attributes = {"ip": self.coordinator.url}
-        image_data = self.coordinator.data["msd"]["drive"].get("image")
-        if image_data:
-            try:
-                attributes.update(image_data)
-            except KeyError as e:
-                _LOGGER.error("Key error accessing MSD enabled attributes: %s", e)
-        
-        return attributes
-
-    async def async_update(self):
-        """Update PiKVM MSD Enabled sensor."""
-        _LOGGER.debug("Updating PiKVM MSD Enabled sensor: %s", self._attr_name)
-        await self.coordinator.async_request_refresh()
+        return self.coordinator.data["msd"]["enabled"]

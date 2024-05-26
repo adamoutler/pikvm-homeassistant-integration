@@ -12,17 +12,19 @@ from .const import DOMAIN, CONF_URL, CONF_USERNAME, CONF_PASSWORD
 
 _LOGGER = logging.getLogger(__name__)
 
+def format_url(input_url):
+    """Ensure the URL is properly formatted."""
+    if not input_url.startswith("http"):
+        input_url = f"https://{input_url}"
+    return input_url.rstrip('/')
+
 class PiKVMDataUpdateCoordinator(DataUpdateCoordinator):
     """Class to manage fetching data from the PiKVM API."""
 
     def __init__(self, hass: HomeAssistant, url: str, username: str, password: str):
         """Initialize."""
         self.hass = hass
-        if (not url.startswith("http://")):
-            self.url = "https://"+url
-        else:
-            self.url=url;
-        
+        self.url = format_url(url)
         self.auth = HTTPBasicAuth(username, password)
         super().__init__(
             hass,
@@ -34,7 +36,7 @@ class PiKVMDataUpdateCoordinator(DataUpdateCoordinator):
     async def _async_update_data(self):
         """Fetch data from PiKVM API."""
         try:
-            _LOGGER.debug("Fetching data from PiKVM API")
+            _LOGGER.debug("Fetching data from PiKVM API at %s", self.url)
             response = await self.hass.async_add_executor_job(
                 functools.partial(
                     requests.get,
@@ -46,7 +48,7 @@ class PiKVMDataUpdateCoordinator(DataUpdateCoordinator):
             response.raise_for_status()
             data_info = response.json()["result"]
 
-            _LOGGER.debug("Fetching data from PiKVM MSD API")
+            _LOGGER.debug("Fetching data from PiKVM MSD API at %s", self.url)
             response_msd = await self.hass.async_add_executor_job(
                 functools.partial(
                     requests.get,
