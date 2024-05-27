@@ -3,8 +3,9 @@
   "name": "PiKVM",
   "version": "1.0.0",
   "documentation": "https://www.home-assistant.io/integrations/pikvm",
+  "dependencies": [],
+  "codeowners": ["@adamoutler"],
   "requirements": [],
-  "codeowners": [],
   "iot_class": "local_polling",
   "config_flow": true,
   "dhcp": [

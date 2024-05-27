@@ -11,8 +11,8 @@ import re
 from .const import DOMAIN, CONF_URL, CONF_USERNAME, CONF_PASSWORD, DEFAULT_USERNAME, DEFAULT_PASSWORD
 
 MAC_FILTER_PREFIXES = [
-    "e4:5f:01",
-    "dc:a6:32"
+    "e45f01",
+    "dca632"
 ]
 
 _LOGGER = logging.getLogger(__name__)

@@ -1,0 +1,12 @@
+{
+    "name": "PiKVM",
+    "content_in_root": false,
+    "country": "USA",
+    "domains": [
+      "sensor"
+    ],
+    "homeassistant": "2021.1.5",
+    "iot_class": "local_polling",
+    "render_readme": true
+  }
+  
