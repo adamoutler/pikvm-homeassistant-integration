@@ -10,11 +10,11 @@
   "config_flow": true,
   "dhcp": [
     {
-      "macaddress": "E4:5F:01*",
+      "macaddress": "E45F01*",
       "hostname": "*"
     },
     {
-      "macaddress": "DC:A6:32*",
+      "macaddress": "DCA632*",
       "hostname": "*"
     }
   ]
