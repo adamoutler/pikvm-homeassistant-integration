@@ -14,6 +14,19 @@
             "type": "shell",
             "command": "docker logs homeassistant|tail -f",
             "problemMatcher": []
+        },
+        {
+            "label": "Link Repository",
+            "type": "shell",
+            "command": "${workspaceFolder}/.vscode/scripts/link-repository.sh",
+            "problemMatcher": [],
+            "presentation": {
+                "reveal": "always",
+                "panel": "new"
+            },
+            "runOptions": {
+                "runOn": "folderOpen"
+            }
         }
     ]
 }
