@@ -50,11 +50,62 @@ This is a custom integration for Home Assistant to monitor and control PiKVM dev
 
 Once the PiKVM integration is added and configured, you will have several sensors available in Home Assistant to monitor the status and health of your PiKVM device. These sensors will include CPU temperature, fan speed, MSD status, and more.
 
+## Development
+
+### Setting up the Development Environment
+
+1. **Clone the Repository**: For development purposes, git clone this repository to your `/config` folder.
+   ```sh
+   git clone https://github.com/yourusername/pikvm-homeassistant /config/pikvm-homeassistant
+   ```
+2. Open with VSCode: Open the repository with VSCode.
+3. Make Your Changes: Make your changes in the repository.
+4. Restart Home Assistant: Restart Home Assistant with F1 -> Tasks: Restart HA.
+5. View Logs: View logs with F1 -> Tasks: logs.
+6.  Enable Debug Logging: For higher detail in logs, enable debug logging in the Home Assistant integration.
+
+## Script for Development
+
+A script is included to automatically link the repository to the correct directory for development. This script will run when you open the workspace.
+
+Script: `.vscode/scripts/link-repository.sh`
+
+``` sh
+#!/bin/sh
+
+# Check if /config/custom_components directory exists
+if [ ! -d /config/custom_components ]; then
+  echo "cannot find custom components directory"
+  exit 1
+fi
+
+# Check if /config/custom_components/pikvm folder already exists
+if [ -d /config/custom_components/pikvm ]; then
+  echo "/config/custom_components/pikvm folder already exists"
+  exit 1
+fi
+
+# Unlink /config/custom_components/pikvm if it's a symbolic link
+if [ -L /config/custom_components/pikvm ]; then
+  unlink /config/custom_components/pikvm
+fi
+
+# Check if custom_components directory exists in the current workspace
+if [ ! -d custom_components ]; then
+  echo "this must be run from the root of the pikvm workspace"
+  exit 1
+fi
+
+# Create symbolic link
+ln -s "$(pwd)/custom_components/pikvm" /config/custom_components/pikvm
+echo "Linking Successful"
+```
+
 ## Troubleshooting
 
-- Ensure your PiKVM device is accessible from your Home Assistant instance.
-- Make sure you have provided the correct URL, username, and password.
-- Check the Home Assistant logs for any error messages related to the PiKVM integration.
+* Ensure your PiKVM device is accessible from your Home Assistant instance.
+* Make sure you have provided the correct URL, username, and password.
+* Check the Home Assistant logs for any error messages related to the PiKVM integration.
 
 ## Contributing
 
@@ -62,4 +113,4 @@ Contributions are welcome! Please fork this repository and open a pull request w
 
 ## License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+This project is licensed under the MIT License - see the LICENSE file for details.
