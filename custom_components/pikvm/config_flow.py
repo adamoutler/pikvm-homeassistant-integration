@@ -111,7 +111,12 @@ class PiKVMConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         return self.async_show_form(
             step_id="user",
             data_schema=data_schema,
-            errors=errors
+            errors=errors,
+            description_placeholders={
+                "url": "URL or IP address of the PiKVM device",
+                "username": "Username for PiKVM",
+                "password": "Password for PiKVM"
+            }
         )
 
     async def async_step_dhcp(self, discovery_info):
@@ -137,7 +142,12 @@ class PiKVMConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
             if await is_pikvm_device(self.hass, url, DEFAULT_USERNAME, DEFAULT_PASSWORD):
                 _LOGGER.debug("PiKVM device found at %s", url)
-
+                data={
+                        CONF_URL: url,
+                        CONF_USERNAME: DEFAULT_USERNAME,
+                        CONF_PASSWORD: DEFAULT_PASSWORD,
+                        "mac_address": mac_address
+                    }
                 # Check if device with the same MAC already exists
                 existing_entry = await self._async_find_existing_entry(mac_address)
                 if existing_entry:
@@ -151,12 +161,7 @@ class PiKVMConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
                 return self.async_create_entry(
                     title="PiKVM",
-                    data={
-                        CONF_URL: url,
-                        CONF_USERNAME: DEFAULT_USERNAME,
-                        CONF_PASSWORD: DEFAULT_PASSWORD,
-                        "mac_address": mac_address
-                    }
+                    
                 )
             else:
                 _LOGGER.debug("PiKVM device not found at %s, showing form to user", url)
@@ -167,6 +172,11 @@ class PiKVMConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                         vol.Required(CONF_USERNAME): str,
                         vol.Required(CONF_PASSWORD): str,
                     }),
+                    description_placeholders={
+                        "url": "config.step.user.data.url",
+                        "username": "config.step.user.data.username",
+                        "password": "config.step.user.data.password"
+                    },
                     errors={"base": "cannot_connect"}
                 )
         else:
