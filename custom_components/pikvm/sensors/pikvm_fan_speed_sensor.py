@@ -11,4 +11,11 @@ class PiKVMFanSpeedSensor(PiKVMBaseSensor):
     @property
     def state(self):
         """Return the state of the sensor."""
-        return self.coordinator.data["fan"]["state"]["fan"]["speed"]
+        fan_data = self.coordinator.data.get("fan")
+        
+        # Check if fan_data is not None and if the state key exists
+        if fan_data and fan_data.get("state"):
+            return fan_data["state"]["fan"]["speed"]
+        
+        # Return a default value or None if fan data is not available
+        return None
