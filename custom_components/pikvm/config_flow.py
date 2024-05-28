@@ -142,26 +142,20 @@ class PiKVMConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
             if await is_pikvm_device(self.hass, url, DEFAULT_USERNAME, DEFAULT_PASSWORD):
                 _LOGGER.debug("PiKVM device found at %s", url)
-                data={
-                        CONF_URL: url,
-                        CONF_USERNAME: DEFAULT_USERNAME,
-                        CONF_PASSWORD: DEFAULT_PASSWORD,
-                        "mac_address": mac_address
-                    }
-                # Check if device with the same MAC already exists
-                existing_entry = await self._async_find_existing_entry(mac_address)
-                if existing_entry:
-                    self.hass.config_entries.async_update_entry(existing_entry, data={
-                        CONF_URL: url,
-                        CONF_USERNAME: DEFAULT_USERNAME,
-                        CONF_PASSWORD: DEFAULT_PASSWORD,
-                        "mac_address": mac_address
-                    })
-                    return self.async_abort(reason="already_configured")
+                data = {
+                    CONF_URL: url,
+                    CONF_USERNAME: DEFAULT_USERNAME,
+                    CONF_PASSWORD: DEFAULT_PASSWORD,
+                    "mac_address": mac_address
+                }
+
+                # Set unique ID to avoid conflicts
+                await self.async_set_unique_id(mac_address)
+                self._abort_if_unique_id_configured()
 
                 return self.async_create_entry(
                     title="PiKVM",
-                    
+                    data=data
                 )
             else:
                 _LOGGER.debug("PiKVM device not found at %s, showing form to user", url)
