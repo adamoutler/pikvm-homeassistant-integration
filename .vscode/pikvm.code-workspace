@@ -1,7 +1,12 @@
 {
 	"folders": [
 		{
+			"name": "PiKVM Integration",
 			"path": ".."
+		},
+		{
+			"name": "Home Assistant Config Folder",
+			"path": "/config"
 		}
 	],
 	"settings": {
