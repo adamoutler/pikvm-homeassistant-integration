@@ -17,7 +17,7 @@
       "macaddress": "DCA632*",
       "hostname": "pikvm"
     }
-  ]
-  ,
+  ],
+  "issue_tracker": "https://github.com/adamoutler/pikvm-homeassistant-integration/issues",
   "translations": ["translations"]
 }
