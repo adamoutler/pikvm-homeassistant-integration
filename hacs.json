@@ -1,12 +1,13 @@
 {
     "name": "PiKVM",
     "content_in_root": false,
-    "country": "USA",
+    "country": "US",
     "domains": [
-      "sensor"
+      "pikvm"
     ],
     "homeassistant": "2021.1.5",
     "iot_class": "local_polling",
-    "render_readme": true
+    "render_readme": true,
+    "issue_tracker": "https://github.com/adamoutler/pikvm-homeassistant-integration/issues"
   }
   
