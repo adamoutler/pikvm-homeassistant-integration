@@ -7,13 +7,15 @@
             "label": "Restart HA",
             "type": "shell",
             "command": "docker restart homeassistant",
-            "problemMatcher": []
+            "problemMatcher": [],
+            "icon": {"id": "debug-restart"}
         },
         {
             "label": "logs",
             "type": "shell",
             "command": "docker logs homeassistant|tail -f",
-            "problemMatcher": []
+            "problemMatcher": [],
+            "icon": {"id": "search"}
         },
         {
             "label": "Link Repository",
@@ -26,7 +28,22 @@
             },
             "runOptions": {
                 "runOn": "folderOpen"
+            },
+            "icon": {"id": "link"}
+        },
+        { 
+            "label": "Install Home Assistant for source references",
+            "type": "shell",
+            "command":" pip3 list|grep homeassistant||pip3 install homeassistant --no-deps --break-system-packages",
+            "presentation": {
+                "reveal": "always",
+                "panel": "new"
+            },
+            "runOptions": {
+                "runOn": "folderOpen"
             }
+            ,
+            "icon": {"id": "add"}
         }
     ]
 }
