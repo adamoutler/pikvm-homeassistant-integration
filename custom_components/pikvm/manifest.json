@@ -1,13 +1,9 @@
 {
   "domain": "pikvm",
   "name": "PiKVM",
-  "version": "1.0.0",
-  "documentation": "https://www.home-assistant.io/integrations/pikvm",
-  "dependencies": [],
   "codeowners": ["@adamoutler"],
-  "requirements": ["scapy"],
-  "iot_class": "local_polling",
   "config_flow": true,
+  "dependencies": [],
   "dhcp": [
     {
       "macaddress": "E45F01*",
@@ -18,5 +14,9 @@
       "hostname": "pikvm"
     }
   ],
-  "issue_tracker": "https://github.com/adamoutler/pikvm-homeassistant-integration/issues"
+  "documentation": "https://www.home-assistant.io/integrations/pikvm",
+  "iot_class": "local_polling",
+  "issue_tracker": "https://github.com/adamoutler/pikvm-homeassistant-integration/issues",
+  "requirements": ["scapy"],
+  "version": "1.0.0"
 }
