@@ -1,1 +1,1 @@
-The PiKVM integration for Home Assistant.
+The PiKVM custom integration for Home Assistant.

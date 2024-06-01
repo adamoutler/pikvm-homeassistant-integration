@@ -1,5 +1,5 @@
 """Constants for the PiKVM integration."""
-DOMAIN = "pikvm"
+DOMAIN = "pikvm_ha"
 CONF_URL = "url"
 CONF_USERNAME = "username"
 CONF_PASSWORD = "password"

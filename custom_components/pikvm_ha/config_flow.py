@@ -30,16 +30,16 @@ async def is_pikvm_device(hass, url, username, password):
                 requests.get, f"{url}/api/info", auth=HTTPBasicAuth(username, password), verify=False
             )
         )
-        _LOGGER.debug("Received response: %s", response.text)
+        _LOGGER.debug("Received response status code: %s", response.status_code)
         response.raise_for_status()
         data = response.json()
         _LOGGER.debug("Parsed response JSON: %s", data)
         return data.get("ok", False)
     except requests.exceptions.RequestException as err:
-        _LOGGER.error("RequestException while checking PiKVM device: %s", err)
+        _LOGGER.error("RequestException while checking PiKVM device at %s: %s", url, err)
         return False
     except ValueError as err:
-        _LOGGER.error("ValueError while parsing response JSON: %s", err)
+        _LOGGER.error("ValueError while parsing response JSON from %s: %s", url, err)
         return False
 
 def get_mac_address(ip_address):
