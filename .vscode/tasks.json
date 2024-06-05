@@ -34,7 +34,7 @@
         { 
             "label": "Install Home Assistant for source references",
             "type": "shell",
-            "command":" pip3 list|grep homeassistant||pip3 install homeassistant --no-deps --break-system-packages",
+            "command":" pip3 list|grep homeassistant||pip3 install homeassistant pyopenssl voluptuous --no-deps --break-system-packages",
             "presentation": {
                 "reveal": "always",
                 "panel": "new"
