@@ -22,7 +22,7 @@ This is a custom integration for Home Assistant to monitor and control PiKVM dev
 2. Go to the HACS panel in Home Assistant.
 3. Click on the "Integrations" tab.
 4. Click on the three dots in the top right corner and select "Custom repositories".
-5. Add this repository URL: `https://github.com/yourusername/pikvm-homeassistant` and select "Integration" as the category.
+5. Add this repository URL: `https://github.com/adamoutler/pikvm-homeassistant-integration` and select "Integration" as the category.
 6. Find "PiKVM Integration" in the list and click "Install".
 7. Restart Home Assistant.
 
