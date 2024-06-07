@@ -16,6 +16,11 @@ This is a custom integration for Home Assistant to monitor and control PiKVM dev
 
 ## Installation
 
+### Automagic Installation
+
+Use the Home Assitant My link to add this repository to HACS.
+[![Open your Home Assistant instance and open a repository inside the Home Assistant Community Store.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=adamoutler&repository=pikvm-homeassistant-integration&category=Integration+)
+
 ### HACS (Home Assistant Community Store)
 
 1. Ensure that HACS is installed and configured in your Home Assistant setup. If not, follow the instructions [here](https://hacs.xyz/docs/installation/manual).
