@@ -1,14 +1,20 @@
 {
-    "config": {
-      "step": {
-        "user": {
-          "data": {
-            "url": "URL or IP address of the PiKVM device",
-            "username": "Username for PiKVM",
-            "password": "Password for PiKVM"
-          }
+  "config": {
+    "step": {
+      "user": {
+        "data": {
+          "url": "URL or IP address of the PiKVM device",
+          "username": "Username for PiKVM",
+          "password": "Password for PiKVM"
         }
+      },
+      "abort": {
+        "already_configured": "The device is already configured in Home Assistant, and the information is now updated."
       }
+    },
+    "error": {
+      "cannot_fetch_cert": "Cannot fetch certificate",
+      "cannot_connect": "Cannot connect to PiKVM device"
     }
   }
-  
+}
