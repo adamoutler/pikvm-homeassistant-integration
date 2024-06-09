@@ -17,5 +17,4 @@ class PiKVMCpuTempSensor(PiKVMBaseSensor):
     def extra_state_attributes(self):
         """Return the state attributes."""
         attributes = super().extra_state_attributes
-        attributes["throttling"] = self.coordinator.data["hw"]["health"].get("throttling", {})
         return attributes
