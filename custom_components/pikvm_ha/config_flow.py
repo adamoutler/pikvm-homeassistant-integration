@@ -110,17 +110,17 @@ class PiKVMConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     _LOGGER.error("Cannot connect to PiKVM device at %s", url)
                     errors["base"] = "cannot_connect"
 
-        if DHCP_CONFIG_FLAG in user_input:
+        if user_input is not None and DHCP_CONFIG_FLAG in user_input:
             data_schema = vol.Schema({
                 vol.Required(CONF_URL, default=user_input[CONF_URL]): str,
-                vol.Optional(CONF_USERNAME, default=DEFAULT_USERNAME): str,
-                vol.Optional(CONF_PASSWORD, default=DEFAULT_PASSWORD): str,
+                vol.Required(CONF_USERNAME, default=DEFAULT_USERNAME): str,
+                vol.Required(CONF_PASSWORD, default=DEFAULT_PASSWORD): str,
             })
         else:
             data_schema = vol.Schema({
                 vol.Required(CONF_URL): str,
-                vol.Optional(CONF_USERNAME, default=DEFAULT_USERNAME): str,
-                vol.Optional(CONF_PASSWORD, default=DEFAULT_PASSWORD): str,
+                vol.Required(CONF_USERNAME, default=DEFAULT_USERNAME): str,
+                vol.Required(CONF_PASSWORD, default=DEFAULT_PASSWORD): str,
             })
 
         return self.async_show_form(
