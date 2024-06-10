@@ -1,3 +1,6 @@
+#192.168.1.105 = standard PiKVM self-signed cert
+#192.168.1.2 = tls 1.3 compatible
+#192.168.1.108 = self-signed Certificate authority
 import socket
 import ssl
 import OpenSSL
@@ -9,9 +12,45 @@ from requests.auth import HTTPBasicAuth
 import functools
 import os
 from urllib3.poolmanager import PoolManager
-from urllib3.util.ssl_ import create_urllib3_context
 
 _LOGGER = logging.getLogger(__name__)
+
+class SSLContextAdapter(HTTPAdapter):
+    def __init__(self, ssl_context, *args, **kwargs):
+        self.ssl_context = ssl_context
+        super().__init__(*args, **kwargs)
+
+    def init_poolmanager(self, *args, **kwargs):
+        kwargs['ssl_context'] = self.ssl_context
+        super().init_poolmanager(*args, **kwargs)
+
+    def cert_verify(self, conn, url, verify, cert):
+        conn.assert_hostname = False
+        conn.cert_reqs = ssl.CERT_NONE
+
+def create_session_with_cert(serialized_cert=None):
+    try:
+        session = requests.Session()
+
+        # Create an SSL context that disables all verifications
+        context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+        context.check_hostname = False  # Disable hostname verification
+        context.verify_mode = ssl.CERT_NONE  # Disable certificate verification
+
+        if serialized_cert:
+            with tempfile.NamedTemporaryFile(delete=False, suffix=".pem") as cert_file:
+                cert_file.write(serialized_cert.encode('utf-8'))
+                cert_file_path = cert_file.name
+            context.load_verify_locations(cert_file_path)
+
+        adapter = SSLContextAdapter(context)
+        session.mount('https://', adapter)
+
+        _LOGGER.debug("Created session with custom SSL context using the certificate.")
+        return session, cert_file_path if serialized_cert else None
+    except Exception as e:
+        _LOGGER.error("Error creating session with certificate: %s", e)
+        return None, None
 
 def fetch_and_serialize_cert(url):
     """
@@ -51,43 +90,6 @@ def fetch_and_serialize_cert(url):
         if 'conn' in locals() and conn:
             conn.close()
         return None
-
-class SSLContextAdapter(HTTPAdapter):
-    def __init__(self, ssl_context, *args, **kwargs):
-        self.ssl_context = ssl_context
-        super().__init__(*args, **kwargs)
-
-    def init_poolmanager(self, *args, **kwargs):
-        kwargs['ssl_context'] = self.ssl_context
-        super().init_poolmanager(*args, **kwargs)
-
-    def init_poolmanager(self, connections, maxsize, block=False, **kwargs):
-        self.poolmanager = PoolManager(
-            num_pools=connections, maxsize=maxsize,
-            block=block, ssl_context=self.ssl_context,
-            assert_hostname=False)  # Disable hostname verification
-
-def create_session_with_cert(serialized_cert):
-    try:
-        session = requests.Session()
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".pem") as cert_file:
-            cert_file.write(serialized_cert.encode('utf-8'))
-            cert_file_path = cert_file.name
-
-        context = create_urllib3_context()
-        context.check_hostname = False  # Disable hostname verification
-        context.verify_mode = ssl.CERT_NONE  # Disable certificate verification
-        context.load_verify_locations(cert_file_path)
-
-        adapter = SSLContextAdapter(context)
-        session.mount('https://', adapter)
-
-        _LOGGER.debug("Created session with custom SSL context using the certificate.")
-        return session, cert_file_path
-    except Exception as e:
-        _LOGGER.error("Error creating session with certificate: %s", e)
-        return None, None
-
 
 def format_url(input_url):
     """Ensure the URL is properly formatted."""
