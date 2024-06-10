@@ -1,16 +1,8 @@
 """Config flow for PiKVM integration."""
-from homeassistant import config_entries, exceptions
-from homeassistant.helpers import config_validation as cv
+from homeassistant import config_entries
 import voluptuous as vol
-import requests
-from requests.auth import HTTPBasicAuth
-import functools
 import logging
-import os
-import asyncio
-from .cert_handler import fetch_and_serialize_cert, create_session_with_cert
-from homeassistant.helpers import device_registry as dr
-
+from .cert_handler import fetch_and_serialize_cert, is_pikvm_device
 from .const import DHCP_CONFIG_FLAG, DOMAIN, CONF_URL, CONF_USERNAME, CONF_PASSWORD, DEFAULT_USERNAME, DEFAULT_PASSWORD, CONF_CERTIFICATE
 
 _LOGGER = logging.getLogger(__name__)
@@ -21,38 +13,6 @@ def format_url(input_url):
         input_url = f"https://{input_url}"
     return input_url.rstrip('/')
 
-async def is_pikvm_device(hass, url, username, password, cert):
-    """Check if the device is a PiKVM and return its serial number."""
-    try:
-        url = format_url(url)
-        _LOGGER.debug("Checking PiKVM device at %s with username %s", url, username)
-
-        session, cert_file_path = await hass.async_add_executor_job(create_session_with_cert, cert)
-        response = await hass.async_add_executor_job(
-            functools.partial(
-                session.get, f"{url}/api/info", auth=HTTPBasicAuth(username, password)
-            )
-        )
-
-        _LOGGER.debug("Received response status code: %s", response.status_code)
-        response.raise_for_status()
-        data = response.json()
-        _LOGGER.debug("Parsed response JSON: %s", data)
-
-        if data.get("ok", False):
-            serial = data.get("result", {}).get("hw", {}).get("platform", {}).get("serial")
-            _LOGGER.debug("Extracted serial number: %s", serial)
-            return True, serial
-        return False, None
-    except requests.exceptions.RequestException as err:
-        _LOGGER.error("RequestException while checking PiKVM device at %s: %s", url, err)
-        return False, None
-    except ValueError as err:
-        _LOGGER.error("ValueError while parsing response JSON from %s: %s", url, err)
-        return False, None
-    finally:
-        if cert_file_path and os.path.exists(cert_file_path):
-            os.remove(cert_file_path)
 
 async def get_translations(hass, language, domain):
     """Get translations for the given language and domain."""
@@ -72,7 +32,7 @@ class PiKVMConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         errors = {}
         translations = await get_translations(self.hass, self.hass.config.language, DOMAIN)
 
-        if user_input is not None and DHCP_CONFIG_FLAG in user_input:
+        if user_input is not None:
             url = format_url(user_input[CONF_URL])
             user_input[CONF_URL] = url
 
@@ -110,19 +70,12 @@ class PiKVMConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     _LOGGER.error("Cannot connect to PiKVM device at %s", url)
                     errors["base"] = "cannot_connect"
 
-        if user_input is not None and DHCP_CONFIG_FLAG in user_input:
-            data_schema = vol.Schema({
-                vol.Required(CONF_URL, default=user_input[CONF_URL]): str,
-                vol.Required(CONF_USERNAME, default=DEFAULT_USERNAME): str,
-                vol.Required(CONF_PASSWORD, default=DEFAULT_PASSWORD): str,
-            })
-        else:
-            data_schema = vol.Schema({
-                vol.Required(CONF_URL): str,
-                vol.Required(CONF_USERNAME, default=DEFAULT_USERNAME): str,
-                vol.Required(CONF_PASSWORD, default=DEFAULT_PASSWORD): str,
-            })
-
+        data_schema = vol.Schema({
+            vol.Required(CONF_URL, default=user_input.get(CONF_URL) if user_input else ""): str,
+            vol.Required(CONF_USERNAME, default=user_input.get(CONF_USERNAME, DEFAULT_USERNAME) if user_input else DEFAULT_USERNAME): str,
+            vol.Required(CONF_PASSWORD, default=user_input.get(CONF_PASSWORD, DEFAULT_PASSWORD) if user_input else DEFAULT_PASSWORD): str,
+        })
+            
         return self.async_show_form(
             step_id="user",
             data_schema=data_schema,

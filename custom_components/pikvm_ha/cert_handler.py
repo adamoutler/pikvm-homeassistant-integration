@@ -1,9 +1,15 @@
-import ssl
 import socket
+import ssl
 import OpenSSL
 import logging
-import tempfile
 import requests
+import tempfile
+from requests.adapters import HTTPAdapter
+from requests.auth import HTTPBasicAuth
+import functools
+import os
+from urllib3.poolmanager import PoolManager
+from urllib3.util.ssl_ import create_urllib3_context
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -35,21 +41,6 @@ def fetch_and_serialize_cert(url):
         cert = conn.getpeercert(True)
         x509 = OpenSSL.crypto.load_certificate(OpenSSL.crypto.FILETYPE_ASN1, cert)
 
-        # Extract the issuer
-        issuer = x509.get_issuer().get_components()
-        issuer_dict = {x[0].decode(): x[1].decode() for x in issuer}
-        issuer_str = ', '.join([f'{k}={v}' for k, v in issuer_dict.items()])
-
-        # Extract subject
-        subject = x509.get_subject().get_components()
-        subject_dict = {x[0].decode(): x[1].decode() for x in subject}
-        subject_str = ', '.join([f'{k}={v}' for k, v in subject_dict.items()])
-
-        # Log the certificate details
-        _LOGGER.debug("Fetched certificate from %s", url)
-        _LOGGER.debug("Certificate issuer: %s", issuer_str)
-        _LOGGER.debug("Certificate subject: %s", subject_str)
-
         # Serialize the certificate
         serialized_cert = OpenSSL.crypto.dump_certificate(OpenSSL.crypto.FILETYPE_PEM, x509).decode('utf-8')
         conn.close()
@@ -57,49 +48,85 @@ def fetch_and_serialize_cert(url):
 
     except Exception as e:
         _LOGGER.error("Error fetching or serializing certificate from %s: %s", url, e)
+        if 'conn' in locals() and conn:
+            conn.close()
         return None
 
-import requests
-import ssl
-import tempfile
+class SSLContextAdapter(HTTPAdapter):
+    def __init__(self, ssl_context, *args, **kwargs):
+        self.ssl_context = ssl_context
+        super().__init__(*args, **kwargs)
+
+    def init_poolmanager(self, *args, **kwargs):
+        kwargs['ssl_context'] = self.ssl_context
+        super().init_poolmanager(*args, **kwargs)
+
+    def init_poolmanager(self, connections, maxsize, block=False, **kwargs):
+        self.poolmanager = PoolManager(
+            num_pools=connections, maxsize=maxsize,
+            block=block, ssl_context=self.ssl_context,
+            assert_hostname=False)  # Disable hostname verification
 
 def create_session_with_cert(serialized_cert):
-    """
-    Create a requests session using the provided certificate.
-
-    Args:
-        serialized_cert (str): The serialized certificate.
-
-    Returns:
-        tuple: A tuple containing the created session and the path to the certificate file.
-               If an error occurs, returns None for both values.
-    """
     try:
         session = requests.Session()
         with tempfile.NamedTemporaryFile(delete=False, suffix=".pem") as cert_file:
             cert_file.write(serialized_cert.encode('utf-8'))
             cert_file_path = cert_file.name
 
-        class SSLContextAdapter(requests.adapters.HTTPAdapter):
-            def init_poolmanager(self, *args, **kwargs):
-                context = ssl.create_default_context()
-                context.check_hostname = False
-                context.verify_mode = ssl.CERT_NONE
-                context.load_verify_locations(cert_file_path)
-                kwargs['ssl_context'] = context
-                return super().init_poolmanager(*args, **kwargs)
+        context = create_urllib3_context()
+        context.check_hostname = False  # Disable hostname verification
+        context.verify_mode = ssl.CERT_NONE  # Disable certificate verification
+        context.load_verify_locations(cert_file_path)
 
-            def init_connection(self, *args, **kwargs):
-                context = ssl.create_default_context()
-                context.check_hostname = False
-                context.verify_mode = ssl.CERT_NONE
-                context.load_verify_locations(cert_file_path)
-                kwargs['ssl_context'] = context
-                return super().init_connection(*args, **kwargs)
+        adapter = SSLContextAdapter(context)
+        session.mount('https://', adapter)
 
-        session.mount('https://', SSLContextAdapter())
         _LOGGER.debug("Created session with custom SSL context using the certificate.")
         return session, cert_file_path
     except Exception as e:
         _LOGGER.error("Error creating session with certificate: %s", e)
         return None, None
+
+
+def format_url(input_url):
+    """Ensure the URL is properly formatted."""
+    if not input_url.startswith("http"):
+        input_url = f"https://{input_url}"
+    return input_url.rstrip('/')
+
+async def is_pikvm_device(hass, url, username, password, cert):
+    """Check if the device is a PiKVM and return its serial number."""
+    try:
+        url = format_url(url)
+        _LOGGER.debug("Checking PiKVM device at %s with username %s", url, username)
+
+        session, cert_file_path = await hass.async_add_executor_job(create_session_with_cert, cert)
+        if not session:
+            return False, None
+
+        response = await hass.async_add_executor_job(
+            functools.partial(
+                session.get, f"{url}/api/info", auth=HTTPBasicAuth(username, password)
+            )
+        )
+
+        _LOGGER.debug("Received response status code: %s", response.status_code)
+        response.raise_for_status()
+        data = response.json()
+        _LOGGER.debug("Parsed response JSON: %s", data)
+
+        if data.get("ok", False):
+            serial = data.get("result", {}).get("hw", {}).get("platform", {}).get("serial")
+            _LOGGER.debug("Extracted serial number: %s", serial)
+            return True, serial
+        return False, None
+    except requests.exceptions.RequestException as err:
+        _LOGGER.error("RequestException while checking PiKVM device at %s: %s", url, err)
+        return False, None
+    except ValueError as err:
+        _LOGGER.error("ValueError while parsing response JSON from %s: %s", url, err)
+        return False, None
+    finally:
+        if cert_file_path and os.path.exists(cert_file_path):
+            os.remove(cert_file_path)
