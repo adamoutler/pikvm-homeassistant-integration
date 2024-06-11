@@ -1,4 +1,4 @@
-"""PiKVM Extra Sensor."""
+from homeassistant.helpers.entity import EntityCategory
 from ..sensor import PiKVMBaseSensor
 
 class PiKVMExtraSensor(PiKVMBaseSensor):
@@ -17,6 +17,7 @@ class PiKVMExtraSensor(PiKVMBaseSensor):
         icon = self.ICONS.get(name, "mdi:information")
         super().__init__(coordinator, device_info, unique_id_base, f"extra_{name}", f"PiKVM {name.capitalize()}", icon=icon)
         self._data = data
+        self._attr_entity_category = EntityCategory.DIAGNOSTIC
 
     @property
     def state(self):

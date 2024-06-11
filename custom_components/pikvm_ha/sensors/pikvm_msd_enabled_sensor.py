@@ -1,4 +1,5 @@
 """PiKVM MSD Enabled Sensor."""
+from homeassistant.helpers.entity import EntityCategory
 from ..sensor import PiKVMBaseSensor
 
 class PiKVMSDEnabledSensor(PiKVMBaseSensor):
@@ -7,6 +8,8 @@ class PiKVMSDEnabledSensor(PiKVMBaseSensor):
     def __init__(self, coordinator, device_info, unique_id_base):
         """Initialize the sensor."""
         super().__init__(coordinator, device_info, unique_id_base, "msd_enabled", "PiKVM MSD Enabled", icon="mdi:check-circle")
+        self._attr_entity_category = EntityCategory.DIAGNOSTIC
+
 
     @property
     def state(self):
