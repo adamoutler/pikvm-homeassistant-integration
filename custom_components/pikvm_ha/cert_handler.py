@@ -7,11 +7,15 @@ import OpenSSL
 import logging
 import requests
 import tempfile
+import warnings
 from requests.adapters import HTTPAdapter
 from requests.auth import HTTPBasicAuth
 import functools
 import os
 from urllib3.poolmanager import PoolManager
+from urllib3.exceptions import InsecureRequestWarning
+
+warnings.simplefilter('ignore', InsecureRequestWarning)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -120,8 +124,9 @@ async def is_pikvm_device(hass, url, username, password, cert):
 
         if data.get("ok", False):
             serial = data.get("result", {}).get("hw", {}).get("platform", {}).get("serial")
+            name = data.get("result", {}).get("meta", {}).get("server", {}).get("host")
             _LOGGER.debug("Extracted serial number: %s", serial)
-            return True, serial
+            return True, serial, name
         return False, None
     except requests.exceptions.RequestException as err:
         _LOGGER.error("RequestException while checking PiKVM device at %s: %s", url, err)

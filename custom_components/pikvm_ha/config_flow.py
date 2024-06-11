@@ -1,5 +1,6 @@
 """Config flow for PiKVM integration."""
 from homeassistant import config_entries
+from homeassistant.helpers import device_registry as dr
 import voluptuous as vol
 import logging
 from .cert_handler import fetch_and_serialize_cert, is_pikvm_device
@@ -20,6 +21,18 @@ async def get_translations(hass, language, domain):
     def translate(key, default):
         return translations.get(f"component.{domain}.{key}", default)
     return translate
+
+class PiKVMConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
+    """Handle a config flow for PiKVM."""
+
+    VERSION = 1
+    CONNECTION_CLASS = config_entries.CONN_CLASS_LOCAL_POLL
+
+    from homeassistant.helpers import device_registry as dr
+
+    from homeassistant.helpers import device_registry as dr
+
+    from homeassistant.helpers import device_registry as dr
 
 class PiKVMConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     """Handle a config flow for PiKVM."""
@@ -49,7 +62,9 @@ class PiKVMConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 _LOGGER.debug("Serialized certificate: %s", serialized_cert)
                 user_input[CONF_CERTIFICATE] = serialized_cert
 
-                is_pikvm, serial = await is_pikvm_device(self.hass, url, username, password, serialized_cert)
+                is_pikvm, serial, name = await is_pikvm_device(self.hass, url, username, password, serialized_cert)
+                if name is None or name == "localhost.localdomain":
+                    name = "pikvm"
                 if is_pikvm:
                     _LOGGER.debug("PiKVM device successfully found at %s with serial %s", url, serial)
 
@@ -65,7 +80,14 @@ class PiKVMConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
                     # Store the serial number in the config entry
                     user_input["serial"] = serial
-                    return self.async_create_entry(title="PiKVM", data=user_input)
+
+                    # Schedule the entry creation
+                    entry = self.async_create_entry(title=name if name else "PiKVM", data=user_input)
+
+                    # Return the entry, and schedule a callback to register the device
+                    self.hass.async_create_task(self._register_device(entry, name, serial))
+
+                    return entry
                 else:
                     _LOGGER.error("Cannot connect to PiKVM device at %s", url)
                     errors["base"] = "cannot_connect"
@@ -75,7 +97,7 @@ class PiKVMConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             vol.Required(CONF_USERNAME, default=user_input.get(CONF_USERNAME, DEFAULT_USERNAME) if user_input else DEFAULT_USERNAME): str,
             vol.Required(CONF_PASSWORD, default=user_input.get(CONF_PASSWORD, DEFAULT_PASSWORD) if user_input else DEFAULT_PASSWORD): str,
         })
-            
+
         return self.async_show_form(
             step_id="user",
             data_schema=data_schema,
@@ -86,6 +108,26 @@ class PiKVMConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 "password": translations("config.step.user.data.password", "Password for PiKVM")
             }
         )
+
+    async def _register_device(self, entry, name, serial):
+        """Register the device with the device registry."""
+        device_registry = await dr.async_get(self.hass)
+        device_registry.async_get_or_create(
+            config_entry_id=entry["entry_id"],
+            identifiers={(DOMAIN, serial)},
+            name=name if name else "PiKVM",
+            manufacturer="PiKVM",
+            model="PiKVM Model",
+            sw_version="1.0",
+            serial_number=serial
+        )
+
+
+
+
+
+
+
 
     async def async_step_dhcp(self, discovery_info):
         """Handle the DHCP discovery step."""
