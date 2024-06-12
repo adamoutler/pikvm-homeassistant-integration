@@ -12,10 +12,11 @@ class PiKVMExtraSensor(PiKVMBaseSensor):
         "webterm": "mdi:console"
     }
 
-    def __init__(self, coordinator, name, data, device_info, unique_id_base):
+    def __init__(self, coordinator, name, data, device_info, unique_id_base, device_name):
         """Initialize the sensor."""
         icon = self.ICONS.get(name, "mdi:information")
-        super().__init__(coordinator, device_info, unique_id_base, f"extra_{name}", f"PiKVM {name.capitalize()}", icon=icon)
+        sensor_name = f"{device_name} {name.capitalize()}"
+        super().__init__(coordinator, device_info, unique_id_base, f"extra_{name}", sensor_name, icon=icon)
         self._data = data
         self._attr_entity_category = EntityCategory.DIAGNOSTIC
 

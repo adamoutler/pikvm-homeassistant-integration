@@ -1,12 +1,12 @@
-"""PiKVM MSD Drive Sensor."""
 from ..sensor import PiKVMBaseSensor
 
 class PiKVMSDDriveSensor(PiKVMBaseSensor):
     """Representation of a PiKVM MSD drive sensor."""
 
-    def __init__(self, coordinator, device_info, unique_id_base):
+    def __init__(self, coordinator, device_info, unique_id_base, device_name):
         """Initialize the sensor."""
-        super().__init__(coordinator, device_info, unique_id_base, "msd_drive", "PiKVM MSD Drive", icon="mdi:usb")
+        name = f"{device_name} MSD Drive"
+        super().__init__(coordinator, device_info, unique_id_base, "msd_drive", name, icon="mdi:usb")
 
     @property
     def state(self):
@@ -21,3 +21,4 @@ class PiKVMSDDriveSensor(PiKVMBaseSensor):
         if drive_data:
             attributes.update(drive_data)
         return attributes
+

@@ -1,12 +1,12 @@
-"""PiKVM MSD Storage Sensor."""
 from ..sensor import PiKVMBaseSensor
 
 class PiKVMSDStorageSensor(PiKVMBaseSensor):
     """Representation of a PiKVM MSD storage sensor."""
 
-    def __init__(self, coordinator, device_info, unique_id_base):
+    def __init__(self, coordinator, device_info, unique_id_base, device_name):
         """Initialize the sensor."""
-        super().__init__(coordinator, device_info, unique_id_base, "msd_storage", "PiKVM MSD Storage", "%", "mdi:database")
+        name = f"{device_name} MSD Storage"
+        super().__init__(coordinator, device_info, unique_id_base, "msd_storage", name, "%", "mdi:database")
 
     @property
     def state(self):
@@ -29,6 +29,6 @@ class PiKVMSDStorageSensor(PiKVMBaseSensor):
             attributes["used_size_mb"] = round((storage_data["size"] - storage_data["free"]) / (1024 * 1024), 2)
             attributes["percent_free"] = self.state
         if images:
-            for image, details  in images.items():
+            for image, details in images.items():
                 attributes[image] = details["size"]
         return attributes

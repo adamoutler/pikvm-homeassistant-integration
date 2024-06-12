@@ -1,21 +1,20 @@
-"""PiKVM Throttling Sensor."""
 from ..sensor import PiKVMBaseSensor
 
 class PiKVMThrottlingSensor(PiKVMBaseSensor):
     """Representation of a PiKVM throttling sensor."""
 
-    def __init__(self, coordinator, device_info, unique_id_base):
+    def __init__(self, coordinator, device_info, unique_id_base, device_name):
         """Initialize the sensor."""
-        super().__init__(coordinator, device_info, unique_id_base, "throttling", "PiKVM Throttling", icon="mdi:alert")
+        name = f"{device_name} Throttling"
+        super().__init__(coordinator, device_info, unique_id_base, "throttling", name, icon="mdi:alert")
 
     @property
     def state(self):
         """Return the state of the sensor."""
         return self.coordinator.data["hw"]["health"].get("throttling", {}).get("raw_flags", 0)
 
-    
     @property
-    def extra_state_attributes(self):    
+    def extra_state_attributes(self):
         throttling_data = self.coordinator.data["hw"]["health"].get("throttling", {})
         flattened_data = {}
         for key, value in throttling_data.items():

@@ -1,12 +1,12 @@
-"""PiKVM CPU Temperature Sensor."""
 from ..sensor import PiKVMBaseSensor
 
 class PiKVMCpuTempSensor(PiKVMBaseSensor):
     """Representation of a PiKVM CPU temperature sensor."""
 
-    def __init__(self, coordinator, device_info, unique_id_base):
+    def __init__(self, coordinator, device_info, unique_id_base, device_name):
         """Initialize the sensor."""
-        super().__init__(coordinator, device_info, unique_id_base, "cpu_temp", "PiKVM CPU Temperature", "°C", "mdi:thermometer")
+        name = f"{device_name} CPU Temp"
+        super().__init__(coordinator, device_info, unique_id_base, "cpu_temp", name, "°C", "mdi:thermometer")
 
     @property
     def state(self):

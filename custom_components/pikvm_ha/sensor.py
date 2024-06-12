@@ -34,16 +34,23 @@ class PiKVMBaseSensor(CoordinatorEntity):
         """Return the state of the sensor."""
         raise NotImplementedError("The state method must be implemented by the subclass.")
 
+
 async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry, async_add_entities):
     """Set up PiKVM sensors from a config entry."""
     _LOGGER.debug("Setting up PiKVM sensors from config entry")
     coordinator = hass.data[DOMAIN][config_entry.entry_id]
 
     unique_id_base = f"{config_entry.entry_id}_{coordinator.data['hw']['platform']['serial']}"
+    device_name = coordinator.data["meta"]["server"]["host"]
+
+    # Use "pikvm" if the device name is "localhost.localdomain"
+    if device_name == "localhost.localdomain":
+        device_name = "pikvm"
+    else:
+        device_name = device_name.replace('.', '_')
 
     device_info = DeviceInfo(
         identifiers={(DOMAIN, unique_id_base)},
-        name="PiKVM",
         model=coordinator.data["hw"]["platform"]["base"],
         manufacturer="PiKVM",
         sw_version=coordinator.data["system"]["kvmd"]["version"],
@@ -60,17 +67,17 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry, asyn
 
     # List of sensors to create
     sensors = [
-        PiKVMCpuTempSensor(coordinator, device_info, unique_id_base),
-        PiKVMFanSpeedSensor(coordinator, device_info, unique_id_base),
-        PiKVMThrottlingSensor(coordinator, device_info, unique_id_base),
-        PiKVMSDEnabledSensor(coordinator, device_info, unique_id_base),
-        PiKVMSDDriveSensor(coordinator, device_info, unique_id_base),
-        PiKVMSDStorageSensor(coordinator, device_info, unique_id_base),
+        PiKVMCpuTempSensor(coordinator, device_info, unique_id_base, device_name),
+        PiKVMFanSpeedSensor(coordinator, device_info, unique_id_base, device_name),
+        PiKVMThrottlingSensor(coordinator, device_info, unique_id_base, device_name),
+        PiKVMSDEnabledSensor(coordinator, device_info, unique_id_base, device_name),
+        PiKVMSDDriveSensor(coordinator, device_info, unique_id_base, device_name),
+        PiKVMSDStorageSensor(coordinator, device_info, unique_id_base, device_name),
     ]
 
     # Dynamically create sensors for extras
     for extra_name, extra_data in coordinator.data["extras"].items():
-        sensors.append(PiKVMExtraSensor(coordinator, extra_name, extra_data, device_info, unique_id_base))
+        sensors.append(PiKVMExtraSensor(coordinator, extra_name, extra_data, device_info, unique_id_base, device_name))
 
     _LOGGER.debug("Created PiKVM sensors: %s", sensors)
     async_add_entities(sensors, True)
