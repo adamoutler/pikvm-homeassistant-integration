@@ -1,11 +1,12 @@
 """The PiKVM integration."""
-import asyncio
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.typing import ConfigType
+from homeassistant import config_entries
 
 from .const import DOMAIN, CONF_URL, CONF_USERNAME, CONF_PASSWORD, CONF_CERTIFICATE
 from .coordinator import PiKVMDataUpdateCoordinator
+
 
 async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
     """Set up the PiKVM component."""
@@ -40,6 +41,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     hass.async_create_task(
         hass.config_entries.async_forward_entry_setup(entry, "sensor")
     )
+    entry.async_on_unload(entry.add_update_listener(update_listener))
 
     return True
 
@@ -60,3 +62,8 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     hass.data[DOMAIN].pop(entry.entry_id)
 
     return True
+
+
+async def update_listener(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    """Handle options update."""
+    await hass.config_entries.async_reload(entry.entry_id)

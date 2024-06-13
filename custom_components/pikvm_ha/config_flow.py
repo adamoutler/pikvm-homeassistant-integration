@@ -1,40 +1,14 @@
 """Config flow for PiKVM integration."""
 from homeassistant import config_entries
+from homeassistant.core import callback
 from homeassistant.helpers import device_registry as dr
-import voluptuous as vol
 import logging
 from .cert_handler import fetch_serialized_cert, is_pikvm_device
 from .const import DHCP_CONFIG_FLAG, DOMAIN, CONF_URL, CONF_USERNAME, CONF_PASSWORD, DEFAULT_USERNAME, DEFAULT_PASSWORD, CONF_CERTIFICATE
+from .options_flow import PiKVMOptionsFlowHandler  # Add this import
+from .utils import format_url, create_data_schema, update_existing_entry, find_existing_entry, get_translations  # Import from utils.py
 
 _LOGGER = logging.getLogger(__name__)
-
-def format_url(input_url):
-    """Ensure the URL is properly formatted."""
-    if not input_url.startswith("http"):
-        input_url = f"https://{input_url}"
-    return input_url.rstrip('/')
-
-def update_existing_entry(self, existing_entry, user_input):
-    """Update an existing config entry."""
-    updated_data = existing_entry.data.copy()
-    updated_data.update(user_input)
-    self.hass.config_entries.async_update_entry(existing_entry, data=updated_data)
-
-def find_existing_entry(self, serial):
-    """Find an existing entry with the same serial number."""
-    existing_entries = self._async_current_entries()
-    for entry in existing_entries:
-        if entry.data.get("serial") == serial:
-            return entry
-    return None
-
-def create_data_schema(user_input):
-    """Create the data schema for the form."""
-    return vol.Schema({
-        vol.Required(CONF_URL, default=user_input.get(CONF_URL, "")): str,
-        vol.Required(CONF_USERNAME, default=user_input.get(CONF_USERNAME, DEFAULT_USERNAME)): str,
-        vol.Required(CONF_PASSWORD, default=user_input.get(CONF_PASSWORD, DEFAULT_PASSWORD)): str,
-    })
 
 async def handle_user_input(self, user_input):
     """Handle user input for the configuration."""
@@ -62,13 +36,12 @@ async def handle_user_input(self, user_input):
             errors["base"] = name
             return None, errors
 
-            
         if is_pikvm:
             _LOGGER.debug("PiKVM device successfully found at %s with serial %s", url, serial)
 
             existing_entry = find_existing_entry(self, serial)
             if existing_entry:
-                update_existing_entry(self, existing_entry, user_input)
+                update_existing_entry(self.hass, existing_entry, user_input)
                 return self.async_abort(reason=self.translations("config.step.abort.already_configured", "The device is already configured in Home Assistant, and the information is now updated.")), None
 
             user_input["serial"] = serial
@@ -81,20 +54,12 @@ async def handle_user_input(self, user_input):
             errors["base"] = "cannot_connect"
             return None, errors
 
-async def get_translations(hass, language, domain):
-    """Get translations for the given language and domain."""
-    translations = await hass.helpers.translation.async_get_translations(language, "config")
-    def translate(key, default):
-        return translations.get(f"component.{domain}.{key}", default)
-    return translate
-
 
 class PiKVMConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     """Handle a config flow for PiKVM."""
 
     VERSION = 1
     CONNECTION_CLASS = config_entries.CONN_CLASS_LOCAL_POLL
-
 
     async def _register_device(self, entry, name, serial):
         """Register the device with the device registry."""
@@ -108,9 +73,9 @@ class PiKVMConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             sw_version="1.0",
             serial_number=serial
         )
-        
+
     async def async_step_dhcp(self, discovery_info):
-        """Handle the DHCP discovery step.  In this deivce, it is possible the PiKVM is not 
+        """Handle the DHCP discovery step.  In this device, it is possible the PiKVM is not 
         ready for API requests when detected as KVMD takes a little while to come up. this DHCP
         config flow could be called on cable-reconnect or DHCP renewal which would be successful detection, or on reboot which may cause the device to be unrecognized due to 
         not yet being ready for API connection."""
@@ -142,7 +107,6 @@ class PiKVMConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
         # If the device is not operational yet, pass the data to the user step
         return await self.async_step_user(user_input=user_input)
-
 
     async def async_step_user(self, user_input=None):
         """Handle the initial step."""
@@ -182,3 +146,8 @@ class PiKVMConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             }
         )
 
+    @staticmethod
+    @callback
+    def async_get_options_flow(config_entry: config_entries.ConfigEntry) -> config_entries.OptionsFlow:
+        """Create the options flow."""
+        return PiKVMOptionsFlowHandler(config_entry)
