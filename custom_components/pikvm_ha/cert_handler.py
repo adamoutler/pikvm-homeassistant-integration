@@ -117,7 +117,7 @@ async def is_pikvm_device(hass, url, username, password, cert):
 
         response = await hass.async_add_executor_job(
             functools.partial(
-                session.get, f"{url}/api/info", auth=HTTPBasicAuth(username, password)
+            session.get, f"{url}/api/info", auth=HTTPBasicAuth(username, password)
             )
         )
 
@@ -131,13 +131,13 @@ async def is_pikvm_device(hass, url, username, password, cert):
             name = data.get("result", {}).get("meta", {}).get("server", {}).get("host")
             _LOGGER.debug("Extracted serial number: %s", serial)
             return True, serial, name
-        return False, None
+        return False, None, "GenericException"
     except requests.exceptions.RequestException as err:
         _LOGGER.error("RequestException while checking PiKVM device at %s: %s", url, err)
-        return False, None
+        return False, None, "Exception_HTTP" + str(err.response.status_code)
     except ValueError as err:
         _LOGGER.error("ValueError while parsing response JSON from %s: %s", url, err)
-        return False, None
+        return False, None, "Exception_JSON"
     finally:
         if cert_file_path and os.path.exists(cert_file_path):
             os.remove(cert_file_path)

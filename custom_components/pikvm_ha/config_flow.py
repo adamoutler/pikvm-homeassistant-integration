@@ -58,6 +58,11 @@ async def handle_user_input(self, user_input):
         is_pikvm, serial, name = await is_pikvm_device(self.hass, url, username, password, serialized_cert)
         if name is None or name == "localhost.localdomain":
             name = "pikvm"
+        elif name.startswith("Exception_"):
+            errors["base"] = name
+            return None, errors
+
+            
         if is_pikvm:
             _LOGGER.debug("PiKVM device successfully found at %s with serial %s", url, serial)
 
@@ -107,8 +112,7 @@ class PiKVMConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     async def async_step_dhcp(self, discovery_info):
         """Handle the DHCP discovery step.  In this deivce, it is possible the PiKVM is not 
         ready for API requests when detected as KVMD takes a little while to come up. this DHCP
-        config flow could be called on cable-reconnect or DHCP renewal which would be 
-        successful detection, or on reboot which may cause the device to be unrecognized due to 
+        config flow could be called on cable-reconnect or DHCP renewal which would be successful detection, or on reboot which may cause the device to be unrecognized due to 
         not yet being ready for API connection."""
         ip_address = discovery_info.ip
 
