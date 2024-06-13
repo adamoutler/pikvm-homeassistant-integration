@@ -79,6 +79,5 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry, asyn
     for extra_name, extra_data in coordinator.data["extras"].items():
         sensors.append(PiKVMExtraSensor(coordinator, extra_name, extra_data, device_info, unique_id_base, device_name))
 
-    _LOGGER.debug("Created PiKVM sensors: %s", sensors)
     async_add_entities(sensors, True)
-    _LOGGER.debug("PiKVM sensors added to Home Assistant")
+    _LOGGER.debug("%s PiKVM sensors added to Home Assistant", device_name)
