@@ -1,5 +1,6 @@
 #!/bin/sh
 
+set -e
 # Function to reload Home Assistant
 reload_home_assistant() {
   echo "Reloading Home Assistant..."
@@ -35,4 +36,5 @@ ln -s "$(pwd)/custom_components/pikvm_ha" /config/custom_components/pikvm_ha
 echo "Linking Successful"
 
 # Reload Home Assistant
-reload_home_assistant
+#reload_home_assistant
+echo "Press F1->Tasks:-> Restart Home Assistant if changes have not taken effect."
