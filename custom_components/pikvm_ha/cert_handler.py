@@ -56,7 +56,11 @@ def create_session_with_cert(serialized_cert=None):
         _LOGGER.error("Error creating session with certificate: %s", e)
         return None, None
 
-def fetch_and_serialize_cert(url):
+async def fetch_serialized_cert(hass, url):
+    """Fetch and serialize the certificate."""
+    return await hass.async_add_executor_job(_fetch_and_serialize_cert, url)
+
+def _fetch_and_serialize_cert(url):
     """
     Fetches the certificate from the given URL and serializes it.
 
