@@ -20,6 +20,10 @@ def format_url(input_url):
         input_url = f"https://{input_url}"
     return input_url.rstrip('/')
 
+class AuthenticationFailed(Exception):
+    """Custom exception for authentication failures."""
+    pass
+
 class PiKVMDataUpdateCoordinator(DataUpdateCoordinator):
     """Class to manage fetching data from the PiKVM API."""
 
@@ -27,7 +31,8 @@ class PiKVMDataUpdateCoordinator(DataUpdateCoordinator):
         """Initialize."""
         self.hass = hass
         self.url = format_url(url)
-        self.auth = HTTPBasicAuth(username, password)
+        self.username = username
+        self.password = password
         self.cert = cert
         self.session = None
         self.cert_file_path = None
@@ -42,6 +47,7 @@ class PiKVMDataUpdateCoordinator(DataUpdateCoordinator):
 
     def _create_session(self):
         """Create the session with the certificate."""
+        self.auth = HTTPBasicAuth(self.username, self.password)
         self.session, self.cert_file_path = create_session_with_cert(self.cert)
         if not self.session:
             _LOGGER.error("Failed to create session with certificate")
@@ -70,6 +76,9 @@ class PiKVMDataUpdateCoordinator(DataUpdateCoordinator):
                     )
                 )
 
+                if response.status_code == 401:
+                    raise AuthenticationFailed("Invalid username or password")
+
                 response.raise_for_status()
                 data_info = response.json()["result"]
 
@@ -85,9 +94,12 @@ class PiKVMDataUpdateCoordinator(DataUpdateCoordinator):
                 data_msd = response_msd.json()["result"]
 
                 data_info["msd"] = data_msd
-                _LOGGER.debug("Received PiKVM Info & MSD from %s",  self.url)
+                _LOGGER.debug("Received PiKVM Info & MSD from %s", self.url)
 
                 return data_info
+            except AuthenticationFailed as auth_err:
+                _LOGGER.error("Authentication failed: %s", auth_err)
+                raise UpdateFailed(f"Authentication failed: {auth_err}")
             except requests.exceptions.RequestException as err:
                 retries += 1
                 if retries < max_retries:
@@ -103,4 +115,3 @@ class PiKVMDataUpdateCoordinator(DataUpdateCoordinator):
             finally:
                 if self.cert_file_path and os.path.exists(self.cert_file_path):
                     os.remove(self.cert_file_path)
-
