@@ -7,10 +7,10 @@
           "username": "Username for PiKVM",
           "password": "Password for PiKVM"
         }
-      },
-      "abort": {
-        "already_configured": "The device is already configured in Home Assistant, and the information is now updated."
       }
+    },
+    "abort": {
+      "already_configured": "The device is already configured in Home Assistant, and the information is now updated."
     },
     "error": {
       "cannot_fetch_cert": "Cannot fetch certificate",

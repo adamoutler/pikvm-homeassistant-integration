@@ -42,7 +42,7 @@ async def handle_user_input(self, user_input):
             existing_entry = find_existing_entry(self, serial)
             if existing_entry:
                 update_existing_entry(self.hass, existing_entry, user_input)
-                return self.async_abort(reason=self.translations("config.step.abort.already_configured", "The device is already configured in Home Assistant, and the information is now updated.")), None
+                return self.async_abort(reason="already_configured"), None
 
             user_input["serial"] = serial
             entry = self.async_create_entry(title=name if name else "PiKVM", data=user_input)

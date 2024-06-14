@@ -16,7 +16,7 @@ class PiKVMOptionsFlowHandler(config_entries.OptionsFlow):
     async def async_step_init(self, user_input=None):
         """Manage the PiKVM options."""
         errors = {}
-        self.translations = await get_translations(self.hass, self.hass.config.language, DOMAIN)
+        self.translate = await get_translations(self.hass, self.hass.config.language, DOMAIN)
         _LOGGER.debug("Entered async_step_init with data: %s", user_input)
 
         if user_input is not None:
@@ -40,8 +40,8 @@ class PiKVMOptionsFlowHandler(config_entries.OptionsFlow):
             data_schema=data_schema,
             errors=errors,
             description_placeholders={
-                "url": self.translations("config.step.init.data.url", "URL or IP address of the PiKVM device"),
-                "username": self.translations("config.step.init.data.username", "Username for PiKVM"),
-                "password": self.translations("config.step.init.data.password", "Password for PiKVM")
+                "url": self.translate("config.step.user.data.url", "URL or IP address of the PiKVM device"),
+                "username": self.translate("config.step.user.data.username", "Username for PiKVM"),
+                "password": self.translate("config.step.user.data.password", "Password for PiKVM")
             }
         )
