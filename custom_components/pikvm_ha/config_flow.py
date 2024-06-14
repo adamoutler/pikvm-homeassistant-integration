@@ -22,7 +22,7 @@ from .utils import format_url, create_data_schema, update_existing_entry, find_e
 
 _LOGGER = logging.getLogger(__name__)
 
-# Define a complete CONFIG_SCHEMA
+# Define a minimal CONFIG_SCHEMA
 CONFIG_SCHEMA = vol.Schema(
     {
         DOMAIN: vol.Schema(
@@ -30,7 +30,6 @@ CONFIG_SCHEMA = vol.Schema(
                 vol.Required(CONF_URL): cv.url,
                 vol.Optional(CONF_USERNAME, default=DEFAULT_USERNAME): cv.string,
                 vol.Optional(CONF_PASSWORD, default=DEFAULT_PASSWORD): cv.string,
-                vol.Optional(CONF_CERTIFICATE): cv.string,
             }
         )
     },
@@ -73,6 +72,10 @@ async def handle_user_input(self, user_input):
 
             user_input["serial"] = serial
             entry = self.async_create_entry(title=name if name else "PiKVM", data=user_input)
+            # Set the unique ID based on the serial number
+            await self.async_set_unique_id(serial)
+            self._abort_if_unique_id_configured()
+
             self.hass.async_create_task(self._register_device(entry, name, serial))
 
             return entry, None
@@ -127,7 +130,6 @@ class PiKVMConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
         entry, errors = await handle_user_input(self, user_input)
         if entry:
-            entry.unique_id = f"{DOMAIN}_{data['serial']}"
             return entry
 
         # If the device is not operational yet, pass the data to the user step
