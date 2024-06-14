@@ -5,7 +5,6 @@
     "@adamoutler"
   ],
   "config_flow": true,
-  "options_flow": true,
   "dependencies": [],
   "dhcp": [
     {
