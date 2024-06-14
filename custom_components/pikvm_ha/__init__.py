@@ -11,6 +11,20 @@ from .coordinator import PiKVMDataUpdateCoordinator
 
 _LOGGER = logging.getLogger(__name__)
 
+# Define a minimal CONFIG_SCHEMA
+CONFIG_SCHEMA = vol.Schema(
+    {
+        DOMAIN: vol.Schema(
+            {
+                vol.Required(CONF_URL): cv.url,
+                vol.Optional(CONF_USERNAME, default=DEFAULT_USERNAME): cv.string,
+                vol.Optional(CONF_PASSWORD, default=DEFAULT_PASSWORD): cv.string,
+            }
+        )
+    },
+    extra=vol.ALLOW_EXTRA,
+)
+
 async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
     """Set up the PiKVM component."""
     return True

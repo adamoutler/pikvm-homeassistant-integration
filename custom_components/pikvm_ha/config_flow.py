@@ -22,19 +22,7 @@ from .utils import format_url, create_data_schema, update_existing_entry, find_e
 
 _LOGGER = logging.getLogger(__name__)
 
-# Define a minimal CONFIG_SCHEMA
-CONFIG_SCHEMA = vol.Schema(
-    {
-        DOMAIN: vol.Schema(
-            {
-                vol.Required(CONF_URL): cv.url,
-                vol.Optional(CONF_USERNAME, default=DEFAULT_USERNAME): cv.string,
-                vol.Optional(CONF_PASSWORD, default=DEFAULT_PASSWORD): cv.string,
-            }
-        )
-    },
-    extra=vol.ALLOW_EXTRA,
-)
+
 
 async def handle_user_input(self, user_input):
     """Handle user input for the configuration."""
