@@ -1,6 +1,7 @@
+import json
 from types import MappingProxyType
 import logging
-from homeassistant.config_entries import ConfigEntry
+from homeassistant.config_entries import ConfigEntry, ConfigEntryState
 from homeassistant.core import HomeAssistant
 
 from .const import DOMAIN
@@ -13,32 +14,30 @@ async def async_get_config_entry_diagnostics(
     """Return diagnostics for a config entry."""
     coordinator = hass.data[DOMAIN].get(config_entry.entry_id)
 
-    entry_data = {
-        "config_entry": {
-            "domain": config_entry.domain,
-            "title": config_entry.title,
-            "unique_id": config_entry.unique_id,
-            "version": config_entry.version,
-            "source": config_entry.source,
-            "data": _mask_sensitive_data(_expand_mapping_proxy(config_entry.data)),
-            "options": _mask_sensitive_data(_expand_mapping_proxy(config_entry.options)),
-        },
-        "data": _mask_sensitive_data(_expand_mapping_proxy(config_entry.data)),
-        "options": _mask_sensitive_data(_expand_mapping_proxy(config_entry.options)),
-        "extra_state_data": _mask_sensitive_data(_expand_mapping_proxy(coordinator.data) if coordinator else {}),
+    diagnostics_data = {
+        "config_entry": _mask_sensitive_data(_expand_mapping_proxy(vars(config_entry))),
         "coordinator": {
             "last_update_success": coordinator.last_update_success if coordinator else None,
             "update_interval": str(coordinator.update_interval) if coordinator else None,
-        } if coordinator else {},
+            "states": _mask_sensitive_data(_expand_mapping_proxy(coordinator.data)) if coordinator else {}
+        } if coordinator else {}
     }
 
-    diagnostics_data = {
-        config_entry.entry_id: {
-            "config_entry_data": entry_data,
-            "hass_data": _mask_sensitive_data(_expand_mapping_proxy(hass.data[DOMAIN][config_entry.entry_id])),
-        }
-    }
-    return diagnostics_data
+    # Sanitize diagnostics data before serialization
+    sanitized_data = _sanitize_data(diagnostics_data)
+
+    # Pretty-print the diagnostics data
+    try:
+        pretty_diagnostics = json.dumps(
+            {config_entry.entry_id: sanitized_data}, 
+            indent=4, 
+            default=_default_json_serialize
+        )
+        _LOGGER.debug("Diagnostics data: %s", pretty_diagnostics)
+    except TypeError as e:
+        _LOGGER.error("Failed to serialize diagnostics data: %s", e)
+
+    return sanitized_data
 
 def _mask_sensitive_data(data):
     """Mask sensitive data such as passwords."""
@@ -62,4 +61,26 @@ def _expand_mapping_proxy(data):
     """Expand a mapping proxy to a dictionary."""
     if isinstance(data, MappingProxyType):
         return dict(data)
+    elif isinstance(data, dict):
+        return {k: _expand_mapping_proxy(v) for k, v in data.items()}
+    elif isinstance(data, list):
+        return [_expand_mapping_proxy(item) for item in data]
+    return data
+
+def _default_json_serialize(obj):
+    """Default JSON serializer for objects not serializable by default json code."""
+    if isinstance(obj, MappingProxyType):
+        return dict(obj)
+    if isinstance(obj, ConfigEntryState):
+        return obj.name
+    if callable(obj):
+        return None  # Skip functions
+    raise TypeError(f"Object of type {obj.__class__.__name__} is not JSON serializable")
+
+def _sanitize_data(data):
+    """Sanitize data by removing non-serializable types."""
+    if isinstance(data, dict):
+        return {k: _sanitize_data(v) for k, v in data.items() if not callable(v)}
+    elif isinstance(data, list):
+        return [_sanitize_data(i) for i in data if not callable(i)]
     return data
