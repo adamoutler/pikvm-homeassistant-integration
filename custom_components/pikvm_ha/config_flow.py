@@ -2,13 +2,40 @@
 from homeassistant import config_entries
 from homeassistant.core import callback
 from homeassistant.helpers import device_registry as dr
+import voluptuous as vol
+import homeassistant.helpers.config_validation as cv
 import logging
+
 from .cert_handler import fetch_serialized_cert, is_pikvm_device
-from .const import DHCP_CONFIG_FLAG, DOMAIN, CONF_URL, CONF_USERNAME, CONF_PASSWORD, DEFAULT_USERNAME, DEFAULT_PASSWORD, CONF_CERTIFICATE
-from .options_flow import PiKVMOptionsFlowHandler  # Add this import
-from .utils import format_url, create_data_schema, update_existing_entry, find_existing_entry, get_translations  # Import from utils.py
+from .const import (
+    DHCP_CONFIG_FLAG,
+    DOMAIN,
+    CONF_URL,
+    CONF_USERNAME,
+    CONF_PASSWORD,
+    DEFAULT_USERNAME,
+    DEFAULT_PASSWORD,
+    CONF_CERTIFICATE,
+)
+from .options_flow import PiKVMOptionsFlowHandler
+from .utils import format_url, create_data_schema, update_existing_entry, find_existing_entry, get_translations
 
 _LOGGER = logging.getLogger(__name__)
+
+# Define a complete CONFIG_SCHEMA
+CONFIG_SCHEMA = vol.Schema(
+    {
+        DOMAIN: vol.Schema(
+            {
+                vol.Required(CONF_URL): cv.url,
+                vol.Optional(CONF_USERNAME, default=DEFAULT_USERNAME): cv.string,
+                vol.Optional(CONF_PASSWORD, default=DEFAULT_PASSWORD): cv.string,
+                vol.Optional(CONF_CERTIFICATE): cv.string,
+            }
+        )
+    },
+    extra=vol.ALLOW_EXTRA,
+)
 
 async def handle_user_input(self, user_input):
     """Handle user input for the configuration."""
@@ -65,7 +92,7 @@ class PiKVMConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         """Register the device with the device registry."""
         device_registry = await dr.async_get(self.hass)
         device_registry.async_get_or_create(
-            config_entry_id=entry["entry_id"],
+            config_entry_id=entry.entry_id,
             identifiers={(DOMAIN, serial)},
             name=name if name else "PiKVM",
             manufacturer="PiKVM",
@@ -75,10 +102,7 @@ class PiKVMConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         )
 
     async def async_step_dhcp(self, discovery_info):
-        """Handle the DHCP discovery step.  In this device, it is possible the PiKVM is not 
-        ready for API requests when detected as KVMD takes a little while to come up. this DHCP
-        config flow could be called on cable-reconnect or DHCP renewal which would be successful detection, or on reboot which may cause the device to be unrecognized due to 
-        not yet being ready for API connection."""
+        """Handle the DHCP discovery step."""
         ip_address = discovery_info.ip
 
         _LOGGER.debug("Discovered device with IP %s", ip_address)
@@ -103,6 +127,7 @@ class PiKVMConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
         entry, errors = await handle_user_input(self, user_input)
         if entry:
+            entry.unique_id = f"{DOMAIN}_{data['serial']}"
             return entry
 
         # If the device is not operational yet, pass the data to the user step
