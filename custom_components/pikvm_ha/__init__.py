@@ -1,4 +1,6 @@
 """The PiKVM integration."""
+import logging
+
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.typing import ConfigType
@@ -7,6 +9,7 @@ from homeassistant import config_entries
 from .const import DOMAIN, CONF_URL, CONF_USERNAME, CONF_PASSWORD, CONF_CERTIFICATE
 from .coordinator import PiKVMDataUpdateCoordinator
 
+_LOGGER = logging.getLogger(__name__)
 
 async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
     """Set up the PiKVM component."""
@@ -26,7 +29,16 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         bool: True if the setup was successful, False otherwise.
     """
     hass.data.setdefault(DOMAIN, {})
-    
+
+    # Retrieve the unique ID and serial number from the config entry
+    stored_serial = entry.data.get('serial', None)
+    unique_id = entry.unique_id
+
+    # Check if the unique ID matches the stored serial number
+    if stored_serial and unique_id != stored_serial:
+        _LOGGER.debug(f"Updating unique ID from {unique_id} to {stored_serial}.")
+        hass.config_entries.async_update_entry(entry, unique_id=stored_serial)
+
     coordinator = PiKVMDataUpdateCoordinator(
         hass,
         entry.data[CONF_URL],
