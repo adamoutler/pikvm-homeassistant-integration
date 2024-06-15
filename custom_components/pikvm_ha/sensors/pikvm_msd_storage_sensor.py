@@ -28,7 +28,9 @@ class PiKVMSDStorageSensor(PiKVMBaseSensor):
             attributes["free_size_mb"] = round(storage_data["free"] / (1024 * 1024), 2)
             attributes["used_size_mb"] = round((storage_data["size"] - storage_data["free"]) / (1024 * 1024), 2)
             attributes["percent_free"] = self.state
-        if images:
+        if images and images.items() < 50:
             for image, details in images.items():
                 attributes[image] = details["size"]
+        elif images:
+            attributes["file count"]=images.items()
         return attributes
