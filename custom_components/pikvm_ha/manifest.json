@@ -9,11 +9,11 @@
   "dhcp": [
     {
       "macaddress": "E45F01*",
-      "hostname": "pikvm"
+      "hostname": "pikvm*"
     },
     {
       "macaddress": "DCA632*",
-      "hostname": "pikvm"
+      "hostname": "pikvm*"
     }
   ],
   "documentation": "https://github.com/adamoutler/pikvm-homeassistant-integration",
