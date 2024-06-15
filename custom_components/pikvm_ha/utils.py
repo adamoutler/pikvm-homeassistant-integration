@@ -35,3 +35,7 @@ async def get_translations(hass, language, domain):
     def translate(key, default):
         return translations.get(f"component.{domain}.{key}", default)
     return translate
+
+def get_unique_id_base(config_entry, coordinator):
+    """Generate the unique_id_base for the sensors."""
+    return f"{config_entry.entry_id}_{coordinator.data['hw']['platform']['serial']}"

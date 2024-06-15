@@ -5,6 +5,7 @@ from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 import logging
 
+from .utils import get_unique_id_base
 from .const import DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
@@ -40,7 +41,7 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry, asyn
     _LOGGER.debug("Setting up PiKVM sensors from config entry")
     coordinator = hass.data[DOMAIN][config_entry.entry_id]
 
-    unique_id_base = f"{config_entry.entry_id}_{coordinator.data['hw']['platform']['serial']}"
+    unique_id_base=get_unique_id_base(config_entry,coordinator)
     device_name = coordinator.data["meta"]["server"]["host"]
 
     # Use "pikvm" if the device name is "localhost.localdomain"
@@ -50,10 +51,14 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry, asyn
         device_name = device_name.replace('.', '_')
 
     device_info = DeviceInfo(
-        identifiers={(DOMAIN, unique_id_base)},
-        model=coordinator.data["hw"]["platform"]["base"],
         manufacturer="PiKVM",
-        sw_version=coordinator.data["system"]["kvmd"]["version"],
+        name=config_entry.title,
+        identifiers={(DOMAIN, config_entry.data["serial"])},
+        configuration_url=config_entry.data["url"],
+        serial_number=config_entry.data["serial"],
+        hw_version=coordinator.data["hw"]["platform"]["base"],
+        model=coordinator.data["hw"]["platform"]["type"],
+        sw_version=coordinator.data["system"]["kvmd"]["version"]
     )
 
     # Dynamically import sensor classes
