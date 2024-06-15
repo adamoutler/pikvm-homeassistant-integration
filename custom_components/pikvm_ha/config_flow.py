@@ -2,8 +2,7 @@
 from homeassistant import config_entries
 from homeassistant.core import callback
 from homeassistant.helpers import device_registry as dr
-import voluptuous as vol
-import homeassistant.helpers.config_validation as cv
+
 import logging
 
 from .cert_handler import fetch_serialized_cert, is_pikvm_device

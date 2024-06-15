@@ -5,8 +5,10 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.typing import ConfigType
 from homeassistant import config_entries
+import voluptuous as vol
+import homeassistant.helpers.config_validation as cv
 
-from .const import DOMAIN, CONF_URL, CONF_USERNAME, CONF_PASSWORD, CONF_CERTIFICATE
+from .const import DOMAIN, CONF_URL, CONF_USERNAME, CONF_PASSWORD, CONF_CERTIFICATE, DEFAULT_USERNAME, DEFAULT_PASSWORD
 from .coordinator import PiKVMDataUpdateCoordinator
 
 _LOGGER = logging.getLogger(__name__)
