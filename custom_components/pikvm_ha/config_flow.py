@@ -58,14 +58,13 @@ async def handle_user_input(self, user_input):
                 return self.async_abort(reason="already_configured"), None
 
             user_input["serial"] = serial
-            entry = self.async_create_entry(title=name if name else "PiKVM", data=user_input)
-            # Set the unique ID based on the serial number
+             # Set the unique ID based on the serial number
             await self.async_set_unique_id(serial)
+            
             self._abort_if_unique_id_configured()
+            config_flow_result = self.async_create_entry(title=name if name else "PiKVM", data=user_input)
 
-            self.hass.async_create_task(self._register_device(entry, name, serial))
-
-            return entry, None
+            return config_flow_result, None
         else:
             _LOGGER.error("Cannot connect to PiKVM device at %s", url)
             errors["base"] = "cannot_connect"
@@ -77,19 +76,6 @@ class PiKVMConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
     VERSION = 1
     CONNECTION_CLASS = config_entries.CONN_CLASS_LOCAL_POLL
-
-    async def _register_device(self, entry, name, serial):
-        """Register the device with the device registry."""
-        device_registry = await dr.async_get(self.hass)
-        device_registry.async_get_or_create(
-            config_entry_id=entry.entry_id,
-            identifiers={(DOMAIN, serial)},
-            name=name if name else "PiKVM",
-            manufacturer="PiKVM",
-            model="PiKVM Model",
-            sw_version="1.0",
-            serial_number=serial
-        )
 
     async def async_step_dhcp(self, discovery_info):
         """Handle the DHCP discovery step."""
