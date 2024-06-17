@@ -32,5 +32,5 @@ class PiKVMSDStorageSensor(PiKVMBaseSensor):
             for image, details in images.items():
                 attributes[image] = details["size"]
         elif images:
-            attributes["file count"]=len(images.items().len()
+            attributes["file count"]=len(images.items())
         return attributes
