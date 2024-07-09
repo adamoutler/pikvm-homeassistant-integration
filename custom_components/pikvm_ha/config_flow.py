@@ -1,8 +1,6 @@
 """Config flow for PiKVM integration."""
 from homeassistant import config_entries
 from homeassistant.core import callback
-from homeassistant.helpers import device_registry as dr
-
 import logging
 
 from .cert_handler import fetch_serialized_cert, is_pikvm_device
