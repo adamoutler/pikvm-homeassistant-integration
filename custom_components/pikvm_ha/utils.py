@@ -1,5 +1,7 @@
 import voluptuous as vol
 from .const import CONF_URL, CONF_USERNAME, CONF_PASSWORD, DEFAULT_USERNAME, DEFAULT_PASSWORD
+from homeassistant.helpers.translation import async_get_translations
+
 
 def format_url(input_url):
     """Ensure the URL is properly formatted."""
@@ -31,7 +33,7 @@ def find_existing_entry(self, serial):
 
 async def get_translations(hass, language, domain):
     """Get translations for the given language and domain."""
-    translations = await hass.helpers.translation.async_get_translations(language, "config")
+    translations = await async_get_translations(hass, language, "config")
     def translate(key, default):
         return translations.get(f"component.{domain}.{key}", default)
     return translate
