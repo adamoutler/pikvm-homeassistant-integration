@@ -19,7 +19,12 @@ class PiKVMFanSpeedSensor(PiKVMBaseSensor):
 
         # Set the unit of measurement based on hall availability
         self._attr_unit_of_measurement = "RPM" if self.hall_available else "%"
-
+    
+    @property
+    def available(self):
+        """Return True if the sensor data is available."""
+        return "state" in self.coordinator.data["fan"]
+    
     @property
     def state(self):
         """Return the state of the sensor."""
