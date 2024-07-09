@@ -62,6 +62,7 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry, asyn
     )
 
     # Dynamically import sensor classes
+    from .sensors.pikvm_cpu_utilization_sensor import PiKVMCpuUtilizationSensor
     from .sensors.pikvm_cpu_temp_sensor import PiKVMCpuTempSensor
     from .sensors.pikvm_fan_speed_sensor import PiKVMFanSpeedSensor
     from .sensors.pikvm_throttling_sensor import PiKVMThrottlingSensor
@@ -72,6 +73,7 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry, asyn
 
     # List of sensors to create
     sensors = [
+        PiKVMCpuUtilizationSensor(coordinator, device_info, unique_id_base, device_name),
         PiKVMCpuTempSensor(coordinator, device_info, unique_id_base, device_name),
         PiKVMFanSpeedSensor(coordinator, device_info, unique_id_base, device_name),
         PiKVMThrottlingSensor(coordinator, device_info, unique_id_base, device_name),
