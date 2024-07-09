@@ -41,3 +41,25 @@ async def get_translations(hass, language, domain):
 def get_unique_id_base(config_entry, coordinator):
     """Generate the unique_id_base for the sensors."""
     return f"{config_entry.entry_id}_{coordinator.data['hw']['platform']['serial']}"
+
+def get_nested_value(data, keys, default=None):
+    """
+    Safely get a nested value from a dictionary.
+    
+    :param data: The dictionary to search.
+    :param keys: A list of keys to traverse the dictionary.
+    :param default: The default value to return if the keys are not found.
+    :return: The value found or the default value.
+    """
+    for key in keys:
+        data = data.get(key, {})
+    return data if data else default
+
+def bytes_to_mb(bytes_value):
+    """
+    Convert bytes to megabytes.
+    
+    :param bytes_value: The value in bytes.
+    :return: The value in megabytes.
+    """
+    return bytes_value / (1024 * 1024)

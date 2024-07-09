@@ -1,3 +1,4 @@
+from custom_components.pikvm_ha.utils import get_nested_value
 from ..sensor import PiKVMBaseSensor
 
 class PiKVMFanSpeedSensor(PiKVMBaseSensor):
@@ -32,10 +33,10 @@ class PiKVMFanSpeedSensor(PiKVMBaseSensor):
             return None
 
         if self.hall_available:
-            hall_data = self.coordinator.data.get("fan", {}).get("state", {}).get("hall", {})
+            hall_data = get_nested_value(self.coordinator.data,["fan","state","hall"])
             return hall_data.get("rpm", None) if hall_data else None
         else:
-            fan_data = self.coordinator.data.get("fan", {}).get("state", {}).get("fan", {})
+            fan_data = get_nested_value(self.coordinator.data,["fan","state","fan"])
             return fan_data.get("speed", None) if fan_data else None
 
     @property

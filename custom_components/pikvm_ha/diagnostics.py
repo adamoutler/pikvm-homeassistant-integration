@@ -3,6 +3,7 @@ from types import MappingProxyType
 import logging
 from homeassistant.config_entries import ConfigEntry, ConfigEntryState
 from homeassistant.core import HomeAssistant
+from threading import Lock
 
 from .const import DOMAIN
 
@@ -73,6 +74,8 @@ def _default_json_serialize(obj):
         return dict(obj)
     if isinstance(obj, ConfigEntryState):
         return obj.name
+    if isinstance(obj, Lock):
+        return "Lock"
     if callable(obj):
         return None  # Skip functions
     raise TypeError(f"Object of type {obj.__class__.__name__} is not JSON serializable")

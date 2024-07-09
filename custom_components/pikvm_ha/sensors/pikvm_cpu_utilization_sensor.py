@@ -1,5 +1,7 @@
 
 import logging
+
+from custom_components.pikvm_ha.utils import get_nested_value
 from ..sensor import PiKVMBaseSensor
 from .. import PiKVMDataUpdateCoordinator
 _LOGGER = logging.getLogger(__name__)
@@ -17,12 +19,13 @@ class PiKVMCpuUtilizationSensor(PiKVMBaseSensor):
     @property
     def state(self):
         """Return the state of the sensor in preferred units."""
-        return self.coordinator.data["hw"]["health"]["cpu"]["percent"]
+        return get_nested_value(self.coordinator.data,["hw","health","cpu","percent"])
+
     
     @property
     def available(self):
         """Return True if the sensor data is available."""
-        return "cpu" in self.coordinator.data["hw"]["health"]
+        return "cpu" in get_nested_value(self.coordinator.data,["hw","health"])
     
     @property
     def unit_of_measurement(self):
