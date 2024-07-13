@@ -28,7 +28,7 @@ class SSLContextAdapter(HTTPAdapter):
         kwargs['ssl_context'] = self.ssl_context
         super().init_poolmanager(*args, **kwargs)
 
-    def cert_verify(self, conn, url, verify, cert):
+    def cert_verify(self, conn, *args, **kwargs):
         conn.assert_hostname = False
         conn.cert_reqs = ssl.CERT_NONE
 

@@ -1,5 +1,5 @@
 import voluptuous as vol
-from .const import CONF_URL, CONF_USERNAME, CONF_PASSWORD, DEFAULT_USERNAME, DEFAULT_PASSWORD
+from .const import CONF_HOST, CONF_USERNAME, CONF_PASSWORD, DEFAULT_USERNAME, DEFAULT_PASSWORD
 from homeassistant.helpers.translation import async_get_translations
 
 
@@ -12,7 +12,7 @@ def format_url(input_url):
 def create_data_schema(user_input):
     """Create the data schema for the form."""
     return vol.Schema({
-        vol.Required(CONF_URL, default=user_input.get(CONF_URL, "")): str,
+        vol.Required(CONF_HOST, default=user_input.get(CONF_HOST, "")): str,
         vol.Required(CONF_USERNAME, default=user_input.get(CONF_USERNAME, DEFAULT_USERNAME)): str,
         vol.Required(CONF_PASSWORD, default=user_input.get(CONF_PASSWORD, DEFAULT_PASSWORD)): str,
     })

@@ -5,8 +5,8 @@ from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 import logging
 
-from .utils import get_unique_id_base
-from .const import DOMAIN
+from .utils import get_unique_id_base, format_url
+from .const import CONF_HOST, CONF_SERIAL, DOMAIN, MANUFACTURER
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -51,14 +51,14 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry, asyn
         device_name = device_name.replace('.', '_')
 
     device_info = DeviceInfo(
-        manufacturer="PiKVM",
-        name=config_entry.title,
-        identifiers={(DOMAIN, config_entry.data["serial"])},
-        configuration_url=config_entry.data["url"],
-        serial_number=config_entry.data["serial"],
-        hw_version=coordinator.data["hw"]["platform"]["base"],
         model=coordinator.data["hw"]["platform"]["type"],
-        sw_version=coordinator.data["system"]["kvmd"]["version"]
+        hw_version=coordinator.data["hw"]["platform"]["base"],
+        sw_version=coordinator.data["system"]["kvmd"]["version"],
+        identifiers={(DOMAIN, config_entry.data[CONF_SERIAL])},
+        configuration_url=format_url(config_entry.data[CONF_HOST]),
+        serial_number=config_entry.data[CONF_SERIAL],
+        manufacturer=MANUFACTURER,
+        name=config_entry.title,
     )
 
     # Dynamically import sensor classes

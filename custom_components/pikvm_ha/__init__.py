@@ -8,7 +8,7 @@ from homeassistant import config_entries
 import voluptuous as vol
 import homeassistant.helpers.config_validation as cv
 
-from .const import DOMAIN, CONF_URL, CONF_USERNAME, CONF_PASSWORD, CONF_CERTIFICATE, DEFAULT_USERNAME, DEFAULT_PASSWORD
+from .const import DOMAIN, CONF_HOST, CONF_USERNAME, CONF_PASSWORD, CONF_CERTIFICATE, DEFAULT_USERNAME, DEFAULT_PASSWORD
 from .coordinator import PiKVMDataUpdateCoordinator
 
 _LOGGER = logging.getLogger(__name__)
@@ -18,7 +18,7 @@ CONFIG_SCHEMA = vol.Schema(
     {
         DOMAIN: vol.Schema(
             {
-                vol.Required(CONF_URL): cv.url,
+                vol.Required(CONF_HOST): cv.url,
                 vol.Optional(CONF_USERNAME, default=DEFAULT_USERNAME): cv.string,
                 vol.Optional(CONF_PASSWORD, default=DEFAULT_PASSWORD): cv.string,
             }
@@ -57,7 +57,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     coordinator = PiKVMDataUpdateCoordinator(
         hass,
-        entry.data[CONF_URL],
+        entry.data[CONF_HOST],
         entry.data[CONF_USERNAME],
         entry.data[CONF_PASSWORD],
         entry.data[CONF_CERTIFICATE]  # Pass the serialized certificate
