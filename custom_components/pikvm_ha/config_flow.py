@@ -47,27 +47,28 @@ async def perform_device_setup(flow_handler, user_input):
         user_input[CONF_CERTIFICATE] = serialized_cert
 
         # Connect and obtain unique data from the device
-        is_pikvm, serial, name = await is_pikvm_device(flow_handler.hass, host, username, password, serialized_cert)
-        
-        # If an HTTP/other error occurred, then we receive a special message in the name.
-        if name.startswith("Exception_"):
-            errors["base"] = name
+        response = await is_pikvm_device(flow_handler.hass, host, username, password, serialized_cert)
+
+        if response.error:
+            errors["base"] = response.error
             return None, errors
-        
-        # If the user has named the device we will use it, otherwise the default will be "pikvm"
-        if name is None or name == "localhost.localdomain":
-            name = "pikvm"
-        
-        # If the device is not a PiKVM device, we will not proceed
-        if not is_pikvm:
-            _LOGGER.error("Cannot connect to PiKVM device at %s", host)
+
+        if not response.success:
+            _LOGGER.error(f"error deteced while connecting to PiKVM device. Error: {response.error}")
+            # Handle the error based on response.name_or_error
             errors["base"] = "cannot_connect"
             return None, errors
+            
         
-        _LOGGER.debug("PiKVM device successfully found at %s with serial %s", host, serial)
+        _LOGGER.debug(f"PiKVM device detected: Model={response.model}, Serial={response.serial}, Name={response.name}")
 
+        # If an HTTP/other error occurred, then we receive a special message in the name.
+        # If the user has named the device we will use it, otherwise the default will be "pikvm"
+        if response.name == "localhost.localdomain":
+            response.name = "pikvm"
+        
         # Check if the device is already configured now that we obtained serial number
-        existing_entry = find_existing_entry(flow_handler, serial)
+        existing_entry = find_existing_entry(flow_handler, response.serial)
         if existing_entry:
             update_existing_entry(flow_handler.hass, existing_entry, {
                 CONF_HOST: host,
@@ -77,11 +78,12 @@ async def perform_device_setup(flow_handler, user_input):
             return flow_handler.async_abort(reason="already_configured"), None
 
         # Set the unique ID based on the serial number
-        user_input["serial"] = serial
-        await flow_handler.async_set_unique_id(serial)
+        user_input["serial"] = response.serial
+        user_input["model"] = response.model
+        await flow_handler.async_set_unique_id(response.serial)
 
         # Finish config
-        config_flow_result = flow_handler.async_create_entry(title=name if name else "PiKVM", data=user_input)
+        config_flow_result = flow_handler.async_create_entry(title=response.name if response.name else "PiKVM", data=user_input)
         return config_flow_result, None
 
     except Exception as e:

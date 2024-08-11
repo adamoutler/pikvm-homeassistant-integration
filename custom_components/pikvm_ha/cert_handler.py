@@ -14,6 +14,7 @@ import functools
 import os
 from urllib3.poolmanager import PoolManager
 from urllib3.exceptions import InsecureRequestWarning
+from collections import namedtuple
 
 warnings.simplefilter('ignore', InsecureRequestWarning)
 
@@ -105,39 +106,57 @@ def format_url(input_url):
         input_url = f"https://{input_url}"
     return input_url.rstrip('/')
 
+
+# Define a named tuple for the return structure
+PiKVMResponse = namedtuple('PiKVMResponse', ['success', 'model', 'serial', 'name', 'error'])
+
 async def is_pikvm_device(hass, url, username, password, cert):
     """Check if the device is a PiKVM and return its serial number."""
-    try:
-        url = format_url(url)
-        _LOGGER.debug("Checking PiKVM device at %s with username %s", url, username)
+    url = format_url(url)
+    _LOGGER.debug("Checking PiKVM device at %s with username %s", url, username)
 
+    try:
         session, cert_file_path = await hass.async_add_executor_job(create_session_with_cert, cert)
         if not session:
-            return False, None
+            _LOGGER.error("Failed to create session.")
+            return PiKVMResponse(False, None, None, None)
 
         response = await hass.async_add_executor_job(
             functools.partial(
-            session.get, f"{url}/api/info", auth=HTTPBasicAuth(username, password)
+                session.get, f"{url}/api/info", auth=HTTPBasicAuth(username, password)
             )
         )
 
         _LOGGER.debug("Received response status code: %s", response.status_code)
         response.raise_for_status()
+
         data = response.json()
         _LOGGER.debug("Parsed response JSON: %s", data)
 
         if data.get("ok", False):
-            serial = data.get("result", {}).get("hw", {}).get("platform", {}).get("serial")
-            name = data.get("result", {}).get("meta", {}).get("server", {}).get("host")
+            serial = data.get("result", {}).get("hw", {}).get("platform", {}).get("serial", None)
+            model = data.get("result", {}).get("hw", {}).get("platform", {}).get("model", None)
+            name = data.get("result", {}).get("meta", {}).get("server", {}).get("host", None)
+
             _LOGGER.debug("Extracted serial number: %s", serial)
-            return True, serial, name
-        return False, None, "GenericException"
+            return PiKVMResponse(True, model, serial, name, None)
+
+        _LOGGER.error("Device check failed: 'ok' key not present or false.")
+        return PiKVMResponse(False, None, None, None, "GenericException")
+
     except requests.exceptions.RequestException as err:
         _LOGGER.error("RequestException while checking PiKVM device at %s: %s", url, err)
-        return False, None, "Exception_HTTP" + str(err.response.status_code)
+        error_code = f"Exception_HTTP{err.response.status_code}" if err.response else "Exception_HTTP"
+        return PiKVMResponse(False, None, None, None, error_code)
+
     except ValueError as err:
         _LOGGER.error("ValueError while parsing response JSON from %s: %s", url, err)
-        return False, None, "Exception_JSON"
+        return PiKVMResponse(False, None, None, None, "Exception_JSON")
+
     finally:
         if cert_file_path and os.path.exists(cert_file_path):
-            os.remove(cert_file_path)
+            try:
+                os.remove(cert_file_path)
+                _LOGGER.debug("Temporary certificate file removed: %s", cert_file_path)
+            except OSError as e:
+                _LOGGER.warning("Failed to remove temporary certificate file: %s", e)

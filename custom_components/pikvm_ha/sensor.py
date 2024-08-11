@@ -51,9 +51,9 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry, asyn
         device_name = device_name.replace('.', '_')
 
     device_info = DeviceInfo(
-        model=coordinator.data["hw"]["platform"]["type"],
-        hw_version=coordinator.data["hw"]["platform"]["base"],
-        sw_version=coordinator.data["system"]["kvmd"]["version"],
+        model=coordinator.data["hw"]["platform"].get("model") or coordinator.data["hw"]["platform"].get("type"),
+        hw_version=coordinator.data["hw"]["platform"].get("base"),
+        sw_version=coordinator.data["system"]["kvmd"].get("version"),
         identifiers={(DOMAIN, config_entry.data[CONF_SERIAL])},
         configuration_url=format_url(config_entry.data[CONF_HOST]),
         serial_number=config_entry.data[CONF_SERIAL],
