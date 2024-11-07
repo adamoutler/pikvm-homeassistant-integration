@@ -125,21 +125,35 @@ class PiKVMConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             })
             return self.async_abort(reason="already_configured")
 
-        user_input = {
+        # Offer options to add or ignore
+        self._discovery_info = {
             CONF_HOST: host,
             CONF_USERNAME: DEFAULT_USERNAME,
-            CONF_PASSWORD: DEFAULT_PASSWORD
+            CONF_PASSWORD: DEFAULT_PASSWORD,
+            "serial": serial
         }
+        return await self._show_zeroconf_menu()
 
-        entry, errors = await perform_device_setup(self, user_input)
+    async def _show_zeroconf_menu(self):
+        """Show menu for ZeroConf discovered device."""
+        return self.async_show_menu(
+            step_id="zeroconf_confirm",
+            menu_options=["add_device", "ignore_device"]
+        )
+
+    async def async_step_zeroconf_confirm(self, user_input):
+        """Handle confirmation to add or ignore the ZeroConf device."""
+        if user_input == "ignore_device":
+            _LOGGER.debug("Ignoring discovered device with serial %s", self._discovery_info["serial"])
+            return self.async_abort(reason="ignored")
+
+        # Proceed with adding the device
+        entry, errors = await perform_device_setup(self, self._discovery_info)
         if entry:
             return entry
 
-        self._discovery_info = user_input
         self._errors = errors
-        return await self.async_step_user(user_input=user_input)
-
-
+        return await self.async_step_user(user_input=self._discovery_info)
     async def async_step_user(self, user_input=None):
         """Handle the initial step."""
         errors = self._errors
