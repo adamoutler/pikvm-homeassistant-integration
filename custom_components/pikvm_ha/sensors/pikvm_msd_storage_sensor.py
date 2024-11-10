@@ -1,12 +1,22 @@
+"""Support for PiKVM MSD storage sensor."""
+
 from ..sensor import PiKVMBaseSensor
+
 
 class PiKVMSDStorageSensor(PiKVMBaseSensor):
     """Representation of a PiKVM MSD storage sensor."""
 
-    def __init__(self, coordinator, device_info, unique_id_base, device_name):
+    def __init__(self, coordinator, unique_id_base, device_name) -> None:
         """Initialize the sensor."""
         name = f"{device_name} MSD Storage"
-        super().__init__(coordinator, device_info, unique_id_base, "msd_storage", name, "%", "mdi:database")
+        super().__init__(
+            coordinator,
+            unique_id_base,
+            "msd_storage",
+            name,
+            "%",
+            "mdi:database",
+        )
 
     @property
     def state(self):
@@ -26,11 +36,13 @@ class PiKVMSDStorageSensor(PiKVMBaseSensor):
         if storage_data:
             attributes["total_size_mb"] = round(storage_data["size"] / (1024 * 1024), 2)
             attributes["free_size_mb"] = round(storage_data["free"] / (1024 * 1024), 2)
-            attributes["used_size_mb"] = round((storage_data["size"] - storage_data["free"]) / (1024 * 1024), 2)
+            attributes["used_size_mb"] = round(
+                (storage_data["size"] - storage_data["free"]) / (1024 * 1024), 2
+            )
             attributes["percent_free"] = self.state
         if images and len(images.items()) < 20:
             for image, details in images.items():
                 attributes[image] = details["size"]
         elif images:
-            attributes["file count"]=len(images.items())
+            attributes["file count"] = len(images.items())
         return attributes

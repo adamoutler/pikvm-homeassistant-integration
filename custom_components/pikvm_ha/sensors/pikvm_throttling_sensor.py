@@ -1,20 +1,34 @@
+"""Support for PiKVM throttling sensor."""
+
 from ..sensor import PiKVMBaseSensor
+
 
 class PiKVMThrottlingSensor(PiKVMBaseSensor):
     """Representation of a PiKVM throttling sensor."""
 
-    def __init__(self, coordinator, device_info, unique_id_base, device_name):
+    def __init__(self, coordinator, unique_id_base, device_name) -> None:
         """Initialize the sensor."""
         name = f"{device_name} Throttling"
-        super().__init__(coordinator, device_info, unique_id_base, "throttling", name, icon="mdi:alert")
+        super().__init__(
+            coordinator,
+            unique_id_base,
+            "throttling",
+            name,
+            icon="mdi:alert",
+        )
 
     @property
     def state(self):
         """Return the state of the sensor."""
-        return self.coordinator.data["hw"]["health"].get("throttling", {}).get("raw_flags", 0)
+        return (
+            self.coordinator.data["hw"]["health"]
+            .get("throttling", {})
+            .get("raw_flags", 0)
+        )
 
     @property
-    def extra_state_attributes(self):
+    def extra_state_attributes(self) -> dict:
+        """Return the state attributes."""
         throttling_data = self.coordinator.data["hw"]["health"].get("throttling", {})
         flattened_data = {}
         for key, value in throttling_data.items():

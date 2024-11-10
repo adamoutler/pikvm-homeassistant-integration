@@ -1,5 +1,9 @@
-from homeassistant.helpers.entity import EntityCategory
+"""Module for PiKVM extra sensor integration."""
+
+from homeassistant.const import EntityCategory
+
 from ..sensor import PiKVMBaseSensor
+
 
 class PiKVMExtraSensor(PiKVMBaseSensor):
     """Representation of a PiKVM extra sensor."""
@@ -9,14 +13,20 @@ class PiKVMExtraSensor(PiKVMBaseSensor):
         "janus": "mdi:web",
         "janus_static": "mdi:web",
         "vnc": "mdi:monitor",
-        "webterm": "mdi:console"
+        "webterm": "mdi:console",
     }
 
-    def __init__(self, coordinator, name, data, device_info, unique_id_base, device_name):
+    def __init__(self, coordinator, name, data, unique_id_base, device_name) -> None:
         """Initialize the sensor."""
         icon = self.ICONS.get(name, "mdi:information")
         sensor_name = f"{device_name} {name.capitalize()}"
-        super().__init__(coordinator, device_info, unique_id_base, f"extra_{name}", sensor_name, icon=icon)
+        super().__init__(
+            coordinator,
+            unique_id_base,
+            f"extra_{name}",
+            sensor_name,
+            icon=icon,
+        )
         self._data = data
         self._attr_entity_category = EntityCategory.DIAGNOSTIC
 

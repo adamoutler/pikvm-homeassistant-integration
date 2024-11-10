@@ -1,33 +1,42 @@
+"""Manages fetching data from the PiKVM API."""
+
+import asyncio
 from datetime import timedelta
+import functools
 import logging
+import os
+
 import requests
 from requests.auth import HTTPBasicAuth
-import functools
-import os
-import asyncio
 
-from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
-from .const import DOMAIN
 from .cert_handler import create_session_with_cert  # Import the function
+from .const import DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
+
 
 def format_url(input_url):
     """Ensure the URL is properly formatted."""
     if not input_url.startswith("http"):
         input_url = f"https://{input_url}"
-    return input_url.rstrip('/')
+    return input_url.rstrip("/")
+
 
 class AuthenticationFailed(Exception):
     """Custom exception for authentication failures."""
-    pass
+
 
 class PiKVMDataUpdateCoordinator(DataUpdateCoordinator):
     """Class to manage fetching data from the PiKVM API."""
 
-    def __init__(self, hass: HomeAssistant, url: str, username: str, password: str, cert: str):
+    url: str = ""
+
+    def __init__(
+        self, hass: HomeAssistant, url: str, username: str, password: str, cert: str
+    ) -> None:
         """Initialize."""
         self.hass = hass
         self.url = format_url(url)
@@ -36,6 +45,7 @@ class PiKVMDataUpdateCoordinator(DataUpdateCoordinator):
         self.cert = cert
         self.session = None
         self.cert_file_path = None
+        self.auth = HTTPBasicAuth(self.username, self.password)
         super().__init__(
             hass,
             _LOGGER,
@@ -43,12 +53,18 @@ class PiKVMDataUpdateCoordinator(DataUpdateCoordinator):
             update_interval=timedelta(seconds=30),
         )
         # Create the session initially
-        self._create_session()
 
-    def _create_session(self):
+    async def async_setup(self) -> None:
+        """Async setup method to create session and handle async code."""
+        # Create the session asynchronously
+        await self._create_session()
+
+    async def _create_session(self):
         """Create the session with the certificate."""
+        # self.auth is already defined in __init__
         self.auth = HTTPBasicAuth(self.username, self.password)
-        self.session, self.cert_file_path = create_session_with_cert(self.cert)
+        session_with_cert = await create_session_with_cert(self.cert)
+        self.session, self.cert_file_path = session_with_cert
         if not self.session:
             _LOGGER.error("Failed to create session with certificate")
         else:
@@ -72,12 +88,12 @@ class PiKVMDataUpdateCoordinator(DataUpdateCoordinator):
                         self.session.get,
                         f"{self.url}/api/info",
                         auth=self.auth,
-                        timeout=10
+                        timeout=10,
                     )
                 )
 
                 if response.status_code == 401:
-                    raise AuthenticationFailed("Invalid username or password")
+                    raise AuthenticationFailed("Invalid username or password")  # noqa: TRY301
 
                 response.raise_for_status()
                 data_info = response.json()["result"]
@@ -87,7 +103,7 @@ class PiKVMDataUpdateCoordinator(DataUpdateCoordinator):
                         self.session.get,
                         f"{self.url}/api/msd",
                         auth=self.auth,
-                        timeout=10
+                        timeout=10,
                     )
                 )
                 response_msd.raise_for_status()
@@ -96,22 +112,29 @@ class PiKVMDataUpdateCoordinator(DataUpdateCoordinator):
                 data_info["msd"] = data_msd
                 _LOGGER.debug("Received PiKVM Info & MSD from %s", self.url)
 
-                return data_info
+                return data_info  # noqa: TRY300
             except AuthenticationFailed as auth_err:
                 _LOGGER.error("Authentication failed: %s", auth_err)
-                raise UpdateFailed(f"Authentication failed: {auth_err}")
+                raise UpdateFailed(f"Authentication failed: {auth_err}") from auth_err
             except requests.exceptions.RequestException as err:
                 retries += 1
                 if retries < max_retries:
-                    _LOGGER.warning("Error communicating with API: %s. Retrying in %s seconds...", err, backoff_time)
+                    _LOGGER.warning(
+                        "Error communicating with API: %s. Retrying in %s seconds",
+                        err,
+                        backoff_time,
+                    )
                     await asyncio.sleep(backoff_time)
                     backoff_time *= 2  # Exponential backoff
                 else:
-                    _LOGGER.error("Max retries exceeded. Error communicating with API: %s", err)
-                    raise UpdateFailed(f"Error communicating with API: {err}")
-            except Exception as e:
-                _LOGGER.error("Unexpected error: %s", e)
-                raise UpdateFailed(f"Unexpected error: {e}")
+                    _LOGGER.error(
+                        "Max retries exceeded. Error communicating with API: %s", err
+                    )
+                    raise UpdateFailed(f"Error communicating with API: {err}") from err
+            except (ValueError, KeyError) as e:
+                _LOGGER.error("Data processing error: %s", e)
+                raise UpdateFailed(f"Data processing error: {e}") from e
             finally:
                 if self.cert_file_path and os.path.exists(self.cert_file_path):
                     os.remove(self.cert_file_path)
+        return None
