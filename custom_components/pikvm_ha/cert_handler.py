@@ -10,6 +10,8 @@ import tempfile
 import warnings
 from requests.adapters import HTTPAdapter
 from requests.auth import HTTPBasicAuth
+from requests.exceptions import HTTPError
+
 import functools
 import os
 from urllib3.poolmanager import PoolManager
@@ -127,7 +129,13 @@ async def is_pikvm_device(hass, url, username, password, cert):
             )
         )
 
+        # Log the status code immediately after getting the response
         _LOGGER.debug("Received response status code: %s", response.status_code)
+
+        # Store the status code before raise_for_status potentially raises an exception
+        status_code = response.status_code
+
+        # Raise an exception for HTTP error codes (like 403)
         response.raise_for_status()
 
         data = response.json()
@@ -144,10 +152,18 @@ async def is_pikvm_device(hass, url, username, password, cert):
         _LOGGER.error("Device check failed: 'ok' key not present or false.")
         return PiKVMResponse(False, None, None, None, "GenericException")
 
+
+    except requests.exceptions.HTTPError as err:
+        # Use the previously stored status_code
+        error_code = f"Exception_HTTP{status_code}"
+        _LOGGER.error("HTTPError while checking PiKVM device at %s: %s", url, err)
+        return PiKVMResponse(False, None, None, None, error_code)
+
     except requests.exceptions.RequestException as err:
         _LOGGER.error("RequestException while checking PiKVM device at %s: %s", url, err)
-        error_code = f"Exception_HTTP{err.response.status_code}" if err.response else "Exception_HTTP"
-        return PiKVMResponse(False, None, None, None, error_code)
+        return PiKVMResponse(False, None, None, None, "Exception_Request")
+
+
 
     except ValueError as err:
         _LOGGER.error("ValueError while parsing response JSON from %s: %s", url, err)
