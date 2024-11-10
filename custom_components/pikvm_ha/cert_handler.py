@@ -1,12 +1,29 @@
-"""Handle certificate-related operations for PiKVM integration."""
+"""Handle certificate-related operations for PiKVM integration.
+The PiKVM uses non-standard certificates, so we need to handle them manually.
+Some of the expected certificatet types are:
+- Non-TLSV3 compliant self-signed certificates by default.
+- TLSV3 self-signed certificates
+- TLSV3 certificates signed by self-signed CA
+- TLSV3 certificates signed by a CA
+The workarounds found in this cert_handler.py are intended to allow operation
+under all circumstances assuming the PiKVM was correctly configured and not 
+currently being intercepted.  The PiKVM public certificate will be recorded
+during the time of the initial setup and stored in the Home Assistant configuration.
+When loaded, the certificate will be used to establish a secure connection to the PiKVM.
+Due to this, we are able to bypass the certificate verification process and establish
+a secure connection to the PiKVM.
 
+This module provides functions to fetch and serialize the certificate from the device. 
+It also provides a function to check if the device is a PiKVM and return its serial number.
+"""
+
+from collections import namedtuple
 import functools
 import logging
 import os
 import socket
 import ssl
 import tempfile
-from typing import NamedTuple
 import warnings
 
 import OpenSSL
@@ -41,19 +58,7 @@ class SSLContextAdapter(HTTPAdapter):
         conn.cert_reqs = ssl.CERT_NONE
 
 
-async def create_session_with_cert(
-    hass: HomeAssistant | None, serialized_cert=None
-) -> tuple:
-    """Create a session with a custom SSL context using the provided certificate.
-
-    Args:
-        hass (HomeAssistant | None): The HomeAssistant instance.
-        serialized_cert (str, optional): The serialized certificate in PEM format.
-
-    Returns:
-        tuple: A tuple containing the session and the certificate file path.
-
-    """
+async def create_session_with_cert(hass: HomeAssistant | None, serialized_cert=None):
     cert_file_path = None
     try:
         session = requests.Session()
@@ -78,10 +83,8 @@ async def create_session_with_cert(
         session.mount("https://", adapter)
 
         _LOGGER.debug("Created session with custom SSL context using the certificate")
-        if serialized_cert:
-            return session, cert_file_path
-        return session, None  # noqa: TRY300
-    except (OSError, ssl.SSLError, OpenSSL.crypto.Error) as e:
+        return session, cert_file_path if serialized_cert else None
+    except Exception as e:
         _LOGGER.error("Error creating session with certificate: %s", e)
         return None, None
 
@@ -91,7 +94,7 @@ async def fetch_serialized_cert(hass: HomeAssistant, url: str) -> str:
     return await hass.async_add_executor_job(_fetch_and_serialize_cert, url)
 
 
-def _fetch_and_serialize_cert(url) -> str:
+def _fetch_and_serialize_cert(url):
     """Fetch the certificate from the given URL and serializes it.
 
     Args:
@@ -135,75 +138,76 @@ def _fetch_and_serialize_cert(url) -> str:
         return None
 
 
-def format_url(input_url) -> str:
+def format_url(input_url):
     """Ensure the URL is properly formatted."""
     if not input_url.startswith("http"):
         input_url = f"https://{input_url}"
     return input_url.rstrip("/")
 
 
-class PiKVMResponse(NamedTuple):
-    """A named tuple to store the response from a PiKVM device check."""
-
-    success: bool
-    model: str | None
-    serial: str | None
-    name: str | None
-    error: str | None
+PiKVMResponse = namedtuple(
+    "PiKVMResponse", ["success", "model", "serial", "name", "error"]
+)
 
 
 async def is_pikvm_device(
     hass: HomeAssistant | None, url: str, username: str, password: str, cert: str
-) -> PiKVMResponse:
-    """Check if the device is a PiKVM and return its serial number."""
+) -> tuple:
+    """Check if the device is a PiKVM and return its serial number.
+
+    Args:
+      hass: HomeAssistant instance.
+      url: The URL of the device.
+      username: The username for the device.
+      password: The password for the device.
+      cert: The certificate for the device.
+
+    Returns:
+    - A tuple containing the success status, model, serial number, name, and error
+    code if an error occurred. The error code may contain an HTTP status code.
+
+    """
     url = format_url(url)
     _LOGGER.debug("Checking PiKVM device at %s with username %s", url, username)
 
     try:
-        session, cert_file_path = await hass.async_add_executor_job(
-            create_session_with_cert, cert
-        )
+        if hass is not None:
+            session, cert_file_path = await create_session_with_cert(hass, cert)
+        else:
+            session, cert_file_path = await create_session_with_cert(None, cert)
         if not session:
             _LOGGER.error("Failed to create session")
-            return PiKVMResponse(False, None, None, None)
+            return PiKVMResponse(False, None, None, None, "HomeAssistantNoneError")
 
-        response = await hass.async_add_executor_job(
-            functools.partial(
-                session.get, f"{url}/api/info", auth=HTTPBasicAuth(username, password)
+        if hass is not None:
+            response = await hass.async_add_executor_job(
+                functools.partial(
+                    session.get,
+                    f"{url}/api/info",
+                    auth=HTTPBasicAuth(username, password),
+                )
             )
-        )
+        else:
+            response = session.get(
+                f"{url}/api/info", auth=HTTPBasicAuth(username, password)
+            )
 
-        # Log the status code immediately after getting the response
         _LOGGER.debug("Received response status code: %s", response.status_code)
-
-        # Store the status code before raise_for_status potentially raises an exception
-        status_code = response.status_code
-
-        # Raise an exception for HTTP error codes (like 403)
         response.raise_for_status()
 
         data = response.json()
         _LOGGER.debug("Parsed response JSON: %s", data)
 
         if data.get("ok", False):
-            serial = (
-                data.get("result", {})
-                .get("hw", {})
-                .get("platform", {})
-                .get("serial", None)
-            )
-            model = (
-                data.get("result", {})
-                .get("hw", {})
-                .get("platform", {})
-                .get("model", None)
-            )
-            name = (
-                data.get("result", {})
-                .get("meta", {})
-                .get("server", {})
-                .get("host", None)
-            )
+            result = data.get("result", {})
+            hw = result.get("hw", {})
+            platform = hw.get("platform", {})
+            meta = result.get("meta", {})
+            server = meta.get("server", {})
+
+            serial = platform.get("serial", None)
+            model = platform.get("model", None)
+            name = server.get("host", None)
 
             _LOGGER.debug("Extracted serial number: %s", serial)
             return PiKVMResponse(True, model, serial, name, None)
@@ -211,17 +215,15 @@ async def is_pikvm_device(
         _LOGGER.error("Device check failed: 'ok' key not present or false")
         return PiKVMResponse(False, None, None, None, "GenericException")
 
-    except requests.exceptions.HTTPError as err:
-        # Use the previously stored status_code
-        error_code = f"Exception_HTTP{status_code}"
-        _LOGGER.error("HTTPError while checking PiKVM device at %s: %s", url, err)
-        return PiKVMResponse(False, None, None, None, error_code)
-
     except requests.exceptions.RequestException as err:
-        _LOGGER.error(
-            "RequestException while checking PiKVM device at %s: %s", url, err
+        # Handle HTTP errors by returning a code which contains the status code
+        _LOGGER.error("RequestException checking PiKVM device at %s: %s", url, err)
+        error_code = (
+            f"Exception_HTTP{err.response.status_code}"
+            if err.response
+            else "Exception_HTTP"
         )
-        return PiKVMResponse(False, None, None, None, "Exception_Request")
+        return PiKVMResponse(False, None, None, None, error_code)
 
     except ValueError as err:
         _LOGGER.error("ValueError while parsing response JSON from %s: %s", url, err)

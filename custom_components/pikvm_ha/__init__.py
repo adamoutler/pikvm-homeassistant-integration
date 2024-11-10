@@ -1,5 +1,6 @@
 """The PiKVM integration."""
 
+import asyncio
 import logging
 
 import voluptuous as vol
@@ -99,8 +100,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # Perform the platform setup outside the event loop to avoid blocking
     async def forward_platform():
         integration = await async_get_integration(hass, DOMAIN)
-        await hass.async_add_executor_job(integration.get_platform, "sensor")
-        await hass.config_entries.async_forward_entry_setups(entry, ["sensor"])
+        # Run tasks concurrently if possible
+
+        await asyncio.gather(
+            hass.async_add_executor_job(integration.get_platform, "sensor"),
+            hass.config_entries.async_forward_entry_setups(entry, ["sensor"]),
+        )
 
     hass.async_create_task(forward_platform())
 

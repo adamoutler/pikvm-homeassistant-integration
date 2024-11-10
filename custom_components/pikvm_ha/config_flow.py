@@ -126,11 +126,8 @@ class PiKVMConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         return await self.async_step_user(user_input=user_input)
 
     # lets filter out the zeroconf discovery of ipv6 addresses
-    async def async_step_zeroconf(
-        self, discovery_info: ZeroconfServiceInfo
-    ) -> config_entries.ConfigFlowResult:
+    async def async_step_zeroconf(self, discovery_info: ZeroconfServiceInfo) -> config_entries.ConfigFlowResult:
         """Handle the ZeroConf discovery step."""
-
         serial = discovery_info.properties.get("serial")
         host = discovery_info.host
         if not serial or not host:
@@ -146,7 +143,6 @@ class PiKVMConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             serial,
             discovery_info.properties.get("model"),
         )
-
         existing_entry = find_existing_entry(self, serial)
         if existing_entry:
             _LOGGER.debug(
@@ -155,6 +151,12 @@ class PiKVMConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             )
             existing_username = existing_entry.data.get(CONF_USERNAME, DEFAULT_USERNAME)
             existing_password = existing_entry.data.get(CONF_PASSWORD, DEFAULT_PASSWORD)
+            _LOGGER.debug(
+                "Updating existing entry with host=%s, username=%s, password=%s",
+                host,
+                existing_username,
+                existing_password,
+            )
             update_existing_entry(
                 self.hass,
                 existing_entry,
@@ -162,10 +164,10 @@ class PiKVMConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     CONF_HOST: host,
                     CONF_USERNAME: existing_username,
                     CONF_PASSWORD: existing_password,
+                    "serial": serial,  # Ensure serial is included
                 },
             )
             return self.async_abort(reason="already_configured")
-
         # Offer options to add or ignore
         self._discovery_info = {
             CONF_HOST: host,

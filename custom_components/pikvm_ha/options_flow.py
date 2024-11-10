@@ -13,6 +13,7 @@ from .const import (
     DEFAULT_PASSWORD,
     DEFAULT_USERNAME,
     DOMAIN,
+    MANUFACTURER,
 )
 from .utils import (
     create_data_schema,
@@ -60,7 +61,7 @@ class PiKVMOptionsFlowHandler(config_entries.OptionsFlow):
                     self.hass, url, username, password, serialized_cert
                 )
                 if name is None or name == "localhost.localdomain":
-                    name = "pikvm"
+                    name = DOMAIN
                 elif name.startswith("Exception_"):
                     errors["base"] = name
                 elif is_pikvm:
@@ -172,7 +173,7 @@ async def handle_user_input(self, user_input):
         await self.async_set_unique_id(serial)
         self._abort_if_unique_id_configured()
         config_flow_result = self.async_create_entry(
-            title=name if name else "PiKVM", data=user_input
+            title=name if name else MANUFACTURER, data=user_input
         )
 
         return config_flow_result, None

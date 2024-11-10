@@ -63,7 +63,7 @@ async def async_setup_entry(
 
     # Use "pikvm" if the device name is "localhost.localdomain"
     if device_name == "localhost.localdomain":
-        device_name = "pikvm"
+        device_name = DOMAIN
     else:
         device_name = device_name.replace(".", "_")
 
