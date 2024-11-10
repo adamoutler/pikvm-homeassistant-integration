@@ -1,5 +1,6 @@
 """Utility functions for the PiKVM integration."""
 
+import re
 import voluptuous as vol
 
 from homeassistant.core import HomeAssistant
@@ -136,7 +137,7 @@ class PiKVMConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 "Updating existing entry with host=%s, username=%s, password=%s",
                 host,
                 existing_username,
-                existing_password,
+                re.sub(r'.', '*', existing_password),
             )
             update_existing_entry(
                 self.hass,

@@ -1,6 +1,7 @@
 """Config flow for PiKVM integration."""
 
 import logging
+import re
 
 from homeassistant import config_entries
 from homeassistant.components.zeroconf import ZeroconfServiceInfo
@@ -157,7 +158,7 @@ class PiKVMConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 "Updating existing entry with host=%s, username=%s, password=%s",
                 host,
                 existing_username,
-                existing_password,
+                re.sub(r'.', '*', existing_password),
             )
             update_existing_entry(
                 self.hass,
@@ -218,7 +219,7 @@ class PiKVMConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 "Entered async_step_user with data: host=%s, username=%s, password=%s",
                 user_input[CONF_HOST],
                 user_input[CONF_USERNAME],
-                user_input[CONF_PASSWORD].replace("*", "*"),
+                re.sub(r'.', '*', user_input[CONF_PASSWORD]),
             )
             entry, setup_errors = await perform_device_setup(self, user_input)
             if setup_errors:
