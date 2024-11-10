@@ -149,7 +149,7 @@ async def handle_user_input(self, user_input):
         self.hass, url, username, password, serialized_cert
     )
     if name is None or name == "localhost.localdomain":
-        name = "pikvm"
+        name = DOMAIN
     elif name.startswith("Exception_"):
         errors["base"] = name
         return None, errors

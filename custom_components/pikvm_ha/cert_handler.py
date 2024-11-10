@@ -34,6 +34,8 @@ from urllib3.exceptions import InsecureRequestWarning
 
 from homeassistant.core import HomeAssistant
 
+from .const import CONF_HOST, CONF_MODEL, CONF_SERIAL
+
 warnings.simplefilter("ignore", InsecureRequestWarning)
 
 _LOGGER = logging.getLogger(__name__)
@@ -205,9 +207,9 @@ async def is_pikvm_device(
             meta = result.get("meta", {})
             server = meta.get("server", {})
 
-            serial = platform.get("serial", None)
-            model = platform.get("model", None)
-            name = server.get("host", None)
+            serial = platform.get(CONF_SERIAL, None).lower()
+            model = platform.get(CONF_MODEL, None)
+            name = server.get(CONF_HOST, None)
 
             _LOGGER.debug("Extracted serial number: %s", serial)
             return PiKVMResponse(True, model, serial, name, None)

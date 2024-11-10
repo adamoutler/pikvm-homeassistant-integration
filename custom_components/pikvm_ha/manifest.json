@@ -1,5 +1,5 @@
 {
-  "domain": "pikvm",
+  "domain": "pikvm_ha",
   "name": "PiKVM",
   "codeowners": ["@adamoutler"],
   "config_flow": true,

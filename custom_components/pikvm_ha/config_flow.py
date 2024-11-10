@@ -10,7 +10,9 @@ from .cert_handler import fetch_serialized_cert, is_pikvm_device
 from .const import (
     CONF_CERTIFICATE,
     CONF_HOST,
+    CONF_MODEL,
     CONF_PASSWORD,
+    CONF_SERIAL,
     CONF_USERNAME,
     DEFAULT_PASSWORD,
     DEFAULT_USERNAME,
@@ -90,8 +92,8 @@ async def perform_device_setup(flow_handler, user_input):
             return flow_handler.async_abort(reason="already_configured"), None
 
         # Set the unique ID based on the serial number
-        user_input["serial"] = response.serial
-        user_input["model"] = response.model
+        user_input[CONF_SERIAL] = response.serial
+        user_input[CONF_MODEL] = response.model.lower()
         await flow_handler.async_set_unique_id(response.serial)
 
         # Finish config
@@ -128,7 +130,7 @@ class PiKVMConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     # lets filter out the zeroconf discovery of ipv6 addresses
     async def async_step_zeroconf(self, discovery_info: ZeroconfServiceInfo) -> config_entries.ConfigFlowResult:
         """Handle the ZeroConf discovery step."""
-        serial = discovery_info.properties.get("serial")
+        serial = discovery_info.properties.get("serial").lower()
         host = discovery_info.host
         if not serial or not host:
             _LOGGER.debug("Discovered device with ZeroConf but missing serial or host")
