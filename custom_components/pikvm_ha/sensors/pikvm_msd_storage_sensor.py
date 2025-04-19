@@ -17,15 +17,15 @@ class PiKVMSDStorageSensor(PiKVMBaseSensor):
             "%",
             "mdi:database",
         )
-
     @property
     def state(self):
-        """Return the state of the sensor."""
-        total_size = self.coordinator.data["msd"]["storage"]["size"]
-        free_size = self.coordinator.data["msd"]["storage"]["free"]
-        if total_size > 0:
-            return round((free_size / total_size) * 100, 2)
-        return 0
+        data = self.coordinator.data.get("msd", {}).get("storage", {})
+        total = data.get("size")
+        free = data.get("free")
+        if total is None or free is None or total <= 0:
+            _LOGGER.warning("MSD storage key missing or invalid: %r", data)
+            return None  # marks sensor unavailable
+        return round((free / total) * 100, 2)
 
     @property
     def extra_state_attributes(self):
