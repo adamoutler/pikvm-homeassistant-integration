@@ -2,6 +2,7 @@
 
 import logging
 import re
+import pyotp
 
 from homeassistant import config_entries
 from homeassistant.components.zeroconf import ZeroconfServiceInfo
@@ -13,6 +14,7 @@ from .const import (
     CONF_HOST,
     CONF_MODEL,
     CONF_PASSWORD,
+    CONF_TOTP,
     CONF_SERIAL,
     CONF_USERNAME,
     DEFAULT_PASSWORD,
@@ -37,12 +39,19 @@ async def perform_device_setup(flow_handler, user_input):
     host = user_input[CONF_HOST]
     username = user_input[CONF_USERNAME]
     password = user_input[CONF_PASSWORD]
+    totp_secret = user_input[CONF_TOTP]
 
     _LOGGER.debug(
         "Entered perform_device_setup with URL %s, username %s", host, username
     )
 
     try:
+        if len(totp_secret) > 0:
+            # Generate 2FA code from provided TOTP secret
+            totp_code = pyotp.TOTP(totp_secret).now()
+        else:
+            totp_code = ""
+        
         # Fetch the certificate
         serialized_cert = await fetch_serialized_cert(flow_handler.hass, host)
         if not serialized_cert:
@@ -52,9 +61,10 @@ async def perform_device_setup(flow_handler, user_input):
         # Store the certificate
         user_input[CONF_CERTIFICATE] = serialized_cert
 
-        # Connect and obtain unique data from the device
+        # Connect and obtain unique data from the device.
+        # When using 2FA we need to append the code after the password.
         response = await is_pikvm_device(
-            flow_handler.hass, host, username, password, serialized_cert
+            flow_handler.hass, host, username, password + totp_code, serialized_cert
         )
 
         if response.error:
@@ -88,7 +98,7 @@ async def perform_device_setup(flow_handler, user_input):
             update_existing_entry(
                 flow_handler.hass,
                 existing_entry,
-                {CONF_HOST: host, CONF_USERNAME: username, CONF_PASSWORD: password},
+                {CONF_HOST: host, CONF_USERNAME: username, CONF_PASSWORD: password, CONF_TOTP: totp_secret},
             )
             return flow_handler.async_abort(reason="already_configured"), None
 
@@ -154,6 +164,7 @@ class PiKVMConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             )
             existing_username = existing_entry.data.get(CONF_USERNAME, DEFAULT_USERNAME)
             existing_password = existing_entry.data.get(CONF_PASSWORD, DEFAULT_PASSWORD)
+            existing_totp = existing_entry.data.get(CONF_TOTP, "")
             _LOGGER.debug(
                 "Updating existing entry with host=%s, username=%s, password=%s",
                 host,
@@ -167,6 +178,7 @@ class PiKVMConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     CONF_HOST: host,
                     CONF_USERNAME: existing_username,
                     CONF_PASSWORD: existing_password,
+                    CONF_TOTP: existing_totp,
                     "serial": serial,  # Ensure serial is included
                 },
             )
@@ -176,6 +188,7 @@ class PiKVMConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             CONF_HOST: host,
             CONF_USERNAME: DEFAULT_USERNAME,
             CONF_PASSWORD: DEFAULT_PASSWORD,
+            CONF_TOTP: "",
             "serial": serial,
         }
         return await self._show_zeroconf_menu()
@@ -233,6 +246,7 @@ class PiKVMConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 CONF_HOST: "",
                 CONF_USERNAME: DEFAULT_USERNAME,
                 CONF_PASSWORD: DEFAULT_PASSWORD,
+                CONF_TOTP: ""
             }
             if self._discovery_info:
                 user_input[CONF_PASSWORD] = ""
@@ -254,6 +268,9 @@ class PiKVMConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 "password": self.translations(
                     "step.user.data.password", "Password for PiKVM"
                 ),
+                "totp": self.translations(
+                    "step.user.data.password", "2FA secret for PiKVM (if enabled)"
+                )
             },
         )
 
