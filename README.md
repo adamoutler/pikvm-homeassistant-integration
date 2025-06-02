@@ -4,7 +4,7 @@
 
 [![Open your Home Assistant instance and open a repository inside the Home Assistant Community Store.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=adamoutler&repository=pikvm-homeassistant-integration&category=Integration)
 
-This is a custom integration for Home Assistant to monitor and control PiKVM devices.
+This is a a fork of (a custom integration for Home Assistant to monitor and control PiKVM devices by adamoutler)[https://github.com/adamoutler/pikvm-homeassistant-integration].
 
 ## Features
 
