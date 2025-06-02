@@ -1,6 +1,9 @@
 """Support for PiKVM MSD storage sensor."""
 
+import logging
 from ..sensor import PiKVMBaseSensor
+
+_LOGGER = logging.getLogger(__name__)
 
 
 class PiKVMSDStorageSensor(PiKVMBaseSensor):
