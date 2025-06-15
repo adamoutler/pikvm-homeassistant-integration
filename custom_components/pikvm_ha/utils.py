@@ -41,7 +41,7 @@ def create_data_schema(user_input):
             vol.Required(
                 CONF_PASSWORD, default=user_input.get(CONF_PASSWORD, DEFAULT_PASSWORD)
             ): str,
-            vol.Optional(CONF_TOTP, default=""): str
+            vol.Optional(CONF_TOTP, default=user_input.get(CONF_TOTP, "")): str
         }
     )
 

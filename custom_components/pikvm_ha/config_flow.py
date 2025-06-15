@@ -188,7 +188,7 @@ class PiKVMConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             CONF_HOST: host,
             CONF_USERNAME: DEFAULT_USERNAME,
             CONF_PASSWORD: DEFAULT_PASSWORD,
-            CONF_TOTP: "",
+            CONF_TOTP: existing_totp,
             "serial": serial,
         }
         return await self._show_zeroconf_menu()
