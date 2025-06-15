@@ -132,6 +132,9 @@ class PiKVMOptionsFlowHandler(config_entries.OptionsFlow):
                 "password": self.translate(
                     "config.step.user.data.password", "Password for PiKVM"
                 ),
+                "totp": self.translate(
+                    "config.step.user.data.totp", "2FA secret for PiKVM (if enabled)"
+                )
             },
         )
 
