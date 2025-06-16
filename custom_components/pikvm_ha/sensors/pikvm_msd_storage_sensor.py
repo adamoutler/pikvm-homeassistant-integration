@@ -1,6 +1,9 @@
 """Support for PiKVM MSD storage sensor."""
 
+import logging
 from ..sensor import PiKVMBaseSensor
+
+_LOGGER = logging.getLogger(__name__)
 
 
 class PiKVMSDStorageSensor(PiKVMBaseSensor):
@@ -19,7 +22,7 @@ class PiKVMSDStorageSensor(PiKVMBaseSensor):
         )
     @property
     def state(self):
-        data = self.coordinator.data.get("msd", {}).get("storage", {})
+        data = self.coordinator.data.get("msd", {}).get("storage", {}).get("parts", {}).get("", {})
         total = data.get("size")
         free = data.get("free")
         if total is None or free is None or total <= 0:
@@ -31,7 +34,7 @@ class PiKVMSDStorageSensor(PiKVMBaseSensor):
     def extra_state_attributes(self):
         """Return the state attributes."""
         attributes = super().extra_state_attributes
-        storage_data = self.coordinator.data["msd"]["storage"]
+        storage_data = self.coordinator.data["msd"]["storage"]["parts"][""]
         images = self.coordinator.data["msd"]["storage"]["images"]
         if storage_data:
             attributes["total_size_mb"] = round(storage_data["size"] / (1024 * 1024), 2)

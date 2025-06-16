@@ -1,6 +1,6 @@
 """Config flow to configure PiKVM."""
 
-import logging
+import logging, pyotp
 
 from homeassistant import config_entries
 
@@ -10,6 +10,7 @@ from .const import (
     CONF_HOST,
     CONF_PASSWORD,
     CONF_USERNAME,
+    CONF_TOTP,
     DEFAULT_PASSWORD,
     DEFAULT_USERNAME,
     DOMAIN,
@@ -46,6 +47,13 @@ class PiKVMOptionsFlowHandler(config_entries.OptionsFlow):
             url = format_url(user_input[CONF_HOST])
             username = user_input.get(CONF_USERNAME, DEFAULT_USERNAME)
             password = user_input.get(CONF_PASSWORD, DEFAULT_PASSWORD)
+            totp_secret = user_input.get(CONF_TOTP, "")
+            
+            # Generate 2FA code from TOTP secret
+            if len(totp_secret) > 0:
+                totp_code = pyotp.TOTP(totp_secret).now()
+            else:
+                totp_code = ""
 
             _LOGGER.debug("Manual setup with URL %s, username %s", url, username)
 
@@ -58,7 +66,7 @@ class PiKVMOptionsFlowHandler(config_entries.OptionsFlow):
                 user_input[CONF_CERTIFICATE] = serialized_cert
 
                 is_pikvm, serial, name = await is_pikvm_device(
-                    self.hass, url, username, password, serialized_cert
+                    self.hass, url, username, password + totp_code, serialized_cert
                 )
                 if name is None or name == "localhost.localdomain":
                     name = DOMAIN
@@ -99,12 +107,14 @@ class PiKVMOptionsFlowHandler(config_entries.OptionsFlow):
         default_url = self.config_entry.data.get(CONF_HOST, "")
         default_username = self.config_entry.data.get(CONF_USERNAME, DEFAULT_USERNAME)
         default_password = self.config_entry.data.get(CONF_PASSWORD, DEFAULT_PASSWORD)
+        default_totp = self.config_entry.data.get(CONF_TOTP, "")
 
         data_schema = create_data_schema(
             {
                 CONF_HOST: default_url,
                 CONF_USERNAME: default_username,
                 CONF_PASSWORD: default_password,
+                CONF_TOTP: default_totp,
             }
         )
 
@@ -122,6 +132,9 @@ class PiKVMOptionsFlowHandler(config_entries.OptionsFlow):
                 "password": self.translate(
                     "config.step.user.data.password", "Password for PiKVM"
                 ),
+                "totp": self.translate(
+                    "config.step.user.data.totp", "2FA secret for PiKVM (if enabled)"
+                )
             },
         )
 
@@ -134,6 +147,12 @@ async def handle_user_input(self, user_input):
 
     username = user_input.get(CONF_USERNAME, DEFAULT_USERNAME)
     password = user_input.get(CONF_PASSWORD, DEFAULT_PASSWORD)
+    totp_secret = user_input.get(CONF_TOTP, "")
+    
+    if len(totp_secret) > 0:
+        totp_code = pyotp.TOTP(totp_secret).now()
+    else:
+        totp_code = ""
 
     _LOGGER.debug("Manual setup with URL %s, username %s", url, username)
 
@@ -146,7 +165,7 @@ async def handle_user_input(self, user_input):
     user_input[CONF_CERTIFICATE] = serialized_cert
 
     is_pikvm, serial, name = await is_pikvm_device(
-        self.hass, url, username, password, serialized_cert
+        self.hass, url, username, password + totp_code, serialized_cert
     )
     if name is None or name == "localhost.localdomain":
         name = DOMAIN

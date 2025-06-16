@@ -53,6 +53,7 @@ Use the Home Assitant My link to add this repository to HACS.
 - **URL**: The URL or IP address of your PiKVM device.
 - **Username**: The username to authenticate with your PiKVM device (default: `admin`).
 - **Password**: The password to authenticate with your PiKVM device (default: `admin`).
+- **2FA Secret**: The secret token used to setup 2FA, if it is enabled (if not, leave blank). It can be obtained running this command: `kvmd-totp show`. Refer to the (PiKVM documentation)[https://docs.pikvm.org/auth/#two-factor-authentication] for setup instructions.
 
 ## Usage
 
