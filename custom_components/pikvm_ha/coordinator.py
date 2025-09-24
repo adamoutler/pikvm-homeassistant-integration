@@ -5,6 +5,7 @@ from datetime import timedelta
 import functools
 import logging
 import os
+import pyotp
 
 import requests
 from requests.auth import HTTPBasicAuth
@@ -35,17 +36,18 @@ class PiKVMDataUpdateCoordinator(DataUpdateCoordinator):
     url: str = ""
 
     def __init__(
-        self, hass: HomeAssistant, url: str, username: str, password: str, cert: str
+        self, hass: HomeAssistant, url: str, username: str, password: str, totp: str, cert: str
     ) -> None:
         """Initialize."""
         self.hass = hass
         self.url = format_url(url)
         self.username = username
         self.password = password
+        if len(totp) > 0:
+            self.totp = pyotp.TOTP(totp)
         self.cert = cert
         self.session = None
         self.cert_file_path = None
-        self.auth = HTTPBasicAuth(self.username, self.password)
         super().__init__(
             hass,
             _LOGGER,
@@ -53,6 +55,13 @@ class PiKVMDataUpdateCoordinator(DataUpdateCoordinator):
             update_interval=timedelta(seconds=30),
         )
         # Create the session initially
+        
+    def get_auth(self):
+        auth = HTTPBasicAuth(self.username, self.password)
+        if self.totp:
+            auth.password += self.totp.now()
+        
+        return auth
 
     async def async_setup(self) -> None:
         """Async setup method to create session and handle async code."""
@@ -78,6 +87,7 @@ class PiKVMDataUpdateCoordinator(DataUpdateCoordinator):
 
         while retries < max_retries:
             try:
+                auth = self.get_auth()
                 _LOGGER.debug("Fetching PiKVM Info & MSD at %s", self.url)
 
                 if not self.session:
@@ -87,7 +97,7 @@ class PiKVMDataUpdateCoordinator(DataUpdateCoordinator):
                     functools.partial(
                         self.session.get,
                         f"{self.url}/api/info",
-                        auth=self.auth,
+                        auth=auth,
                         timeout=10,
                     )
                 )
@@ -102,7 +112,7 @@ class PiKVMDataUpdateCoordinator(DataUpdateCoordinator):
                     functools.partial(
                         self.session.get,
                         f"{self.url}/api/msd",
-                        auth=self.auth,
+                        auth=auth,
                         timeout=10,
                     )
                 )

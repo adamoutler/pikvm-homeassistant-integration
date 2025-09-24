@@ -13,6 +13,7 @@ from .const import (
     CONF_HOST,
     CONF_PASSWORD,
     CONF_USERNAME,
+    CONF_TOTP,
     DEFAULT_PASSWORD,
     DEFAULT_USERNAME,
     DOMAIN,
@@ -40,6 +41,7 @@ def create_data_schema(user_input):
             vol.Required(
                 CONF_PASSWORD, default=user_input.get(CONF_PASSWORD, DEFAULT_PASSWORD)
             ): str,
+            vol.Optional(CONF_TOTP, default=user_input.get(CONF_TOTP, "")): str
         }
     )
 
@@ -133,6 +135,7 @@ class PiKVMConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             )
             existing_username = existing_entry.data.get(CONF_USERNAME, DEFAULT_USERNAME)
             existing_password = existing_entry.data.get(CONF_PASSWORD, DEFAULT_PASSWORD)
+            existing_totp = existing_entry.data.get(CONF_TOTP, "")
             _LOGGER.debug(
                 "Updating existing entry with host=%s, username=%s, password=%s",
                 host,
@@ -146,6 +149,7 @@ class PiKVMConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     CONF_HOST: host,
                     CONF_USERNAME: existing_username,
                     CONF_PASSWORD: existing_password,
+                    CONF_TOTP: existing_totp,
                     "serial": serial,  # Ensure serial is included
                 },
             )
@@ -155,6 +159,7 @@ class PiKVMConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             CONF_HOST: host,
             CONF_USERNAME: DEFAULT_USERNAME,
             CONF_PASSWORD: DEFAULT_PASSWORD,
+            CONF_TOTP: "",
             "serial": serial,
         }
         return await self._show_zeroconf_menu()
