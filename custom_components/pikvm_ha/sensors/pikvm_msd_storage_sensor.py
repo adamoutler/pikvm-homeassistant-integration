@@ -1,6 +1,7 @@
 """Support for PiKVM MSD storage sensor."""
 
 import logging
+
 from ..sensor import PiKVMBaseSensor
 
 _LOGGER = logging.getLogger(__name__)
@@ -20,6 +21,7 @@ class PiKVMSDStorageSensor(PiKVMBaseSensor):
             "%",
             "mdi:database",
         )
+
     @property
     def state(self):
         data = self.coordinator.data.get("msd", {}).get("storage", {}).get("parts", {}).get("", {})
@@ -37,12 +39,17 @@ class PiKVMSDStorageSensor(PiKVMBaseSensor):
         storage_data = self.coordinator.data["msd"]["storage"]["parts"][""]
         images = self.coordinator.data["msd"]["storage"]["images"]
         if storage_data:
-            attributes["total_size_mb"] = round(storage_data["size"] / (1024 * 1024), 2)
-            attributes["free_size_mb"] = round(storage_data["free"] / (1024 * 1024), 2)
-            attributes["used_size_mb"] = round(
-                (storage_data["size"] - storage_data["free"]) / (1024 * 1024), 2
-            )
-            attributes["percent_free"] = self.state
+            if "size" in storage_data:
+                attributes["total_size_mb"] = round(storage_data["size"] / (1024 * 1024), 2)
+            if "free" in storage_data:
+                attributes["free_size_mb"] = round(storage_data["free"] / (1024 * 1024), 2)
+            if "free" in storage_data and "size" in storage_data:
+                attributes["used_size_mb"] = round(
+                    (storage_data["size"] - storage_data["free"]) / (1024 * 1024), 2
+                )
+            state = self.state
+            if state is not None:
+                attributes["percent_free"] = self.state
         if images and len(images.items()) < 20:
             for image, details in images.items():
                 attributes[image] = details["size"]
