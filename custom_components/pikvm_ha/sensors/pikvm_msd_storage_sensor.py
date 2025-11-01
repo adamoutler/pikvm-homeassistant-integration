@@ -24,11 +24,12 @@ class PiKVMSDStorageSensor(PiKVMBaseSensor):
 
     @property
     def state(self):
-        data = self.coordinator.data.get("msd", {}).get("storage", {})
-        total = data.get("size")
-        free = data.get("free")
+        coordinator_data = getattr(self.coordinator, "data", {}) or {}
+        storage = coordinator_data.get("msd", {}).get("storage", {})
+        total = storage.get("size")
+        free = storage.get("free")
         if total is None or free is None or total <= 0:
-            _LOGGER.warning("MSD storage key missing or invalid: %r", data)
+            _LOGGER.debug("MSD storage data missing or invalid: %r", storage)
             return None  # marks sensor unavailable
         return round((free / total) * 100, 2)
 
@@ -36,23 +37,29 @@ class PiKVMSDStorageSensor(PiKVMBaseSensor):
     def extra_state_attributes(self):
         """Return the state attributes."""
         attributes = super().extra_state_attributes
-        storage_data = self.coordinator.data["msd"]["storage"]
-        images = self.coordinator.data["msd"]["storage"]["images"]
+        coordinator_data = getattr(self.coordinator, "data", {}) or {}
+        storage_data = coordinator_data.get("msd", {}).get("storage", {}) or {}
+        images = storage_data.get("images", {}) or {}
+
         if storage_data:
-            if "size" in storage_data:
-                attributes["total_size_mb"] = round(storage_data["size"] / (1024 * 1024), 2)
-            if "free" in storage_data:
-                attributes["free_size_mb"] = round(storage_data["free"] / (1024 * 1024), 2)
-            if "free" in storage_data and "size" in storage_data:
-                attributes["used_size_mb"] = round(
-                    (storage_data["size"] - storage_data["free"]) / (1024 * 1024), 2
-                )
+            size = storage_data.get("size")
+            free = storage_data.get("free")
+            if size is not None:
+                attributes["total_size_mb"] = round(size / (1024 * 1024), 2)
+            if free is not None:
+                attributes["free_size_mb"] = round(free / (1024 * 1024), 2)
+            if size is not None and free is not None:
+                attributes["used_size_mb"] = round((size - free) / (1024 * 1024), 2)
             state = self.state
             if state is not None:
-                attributes["percent_free"] = self.state
-        if images and len(images.items()) < 20:
-            for image, details in images.items():
-                attributes[image] = details["size"]
-        elif images:
-            attributes["file count"] = len(images.items())
+                attributes["percent_free"] = state
+
+        if images:
+            if len(images) < 20:
+                for image, details in images.items():
+                    size = details.get("size")
+                    if size is not None:
+                        attributes[image] = size
+            else:
+                attributes["file count"] = len(images)
         return attributes
