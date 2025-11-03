@@ -77,11 +77,6 @@ async def perform_device_setup(flow_handler, user_input):
             response.name,
         )
 
-        # If an HTTP/other error occurred, then we receive a special message in the name.
-        # If the user has named the device we will use it, otherwise the default will be "pikvm"
-        if response.name == "localhost.localdomain":
-            response.name = MANUFACTURER
-
         # Check if the device is already configured now that we obtained serial number
         existing_entry = find_existing_entry(flow_handler, response.serial)
         if existing_entry:
@@ -92,14 +87,17 @@ async def perform_device_setup(flow_handler, user_input):
             )
             return flow_handler.async_abort(reason="already_configured"), None
 
-        # Set the unique ID based on the serial number
-        user_input[CONF_SERIAL] = response.serial
+        device_name = response.name
+        if device_name == "localhost.localdomain":
+            device_name = MANUFACTURER
+
         user_input[CONF_MODEL] = response.model.lower()
+        user_input[CONF_SERIAL] = response.serial
         await flow_handler.async_set_unique_id(response.serial)
 
         # Finish config
         config_flow_result = flow_handler.async_create_entry(
-            title=response.name if response.name else "PiKVM", data=user_input
+            title=device_name if device_name else "PiKVM", data=user_input
         )
         return config_flow_result, None  # noqa: TRY300
 
@@ -210,9 +208,17 @@ class PiKVMConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         errors = self._errors
         self._errors = {}  # Reset errors after using them
 
-        self.translations = (
-            await get_translations(self.hass, self.hass.config.language, DOMAIN) or {}
+        translations = await get_translations(
+            self.hass, self.hass.config.language, DOMAIN
         )
+        if translations and not callable(translations):
+
+            def translate(key: str, default: str) -> str:
+                return translations.get(key, default)
+
+            self.translations = translate
+        else:
+            self.translations = translations
 
         if user_input is not None:
             _LOGGER.debug(
@@ -238,22 +244,26 @@ class PiKVMConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 user_input[CONF_PASSWORD] = ""
 
         data_schema = create_data_schema(user_input)
+
+        def _translate(key: str, default: str) -> str:
+            if self.translations:
+                return self.translations(key, default)
+            return default
+
         return self.async_show_form(
             step_id="user",
             data_schema=data_schema,
             errors=errors,
             description_placeholders={
-                "url": self.translations(
+                "url": _translate(
                     "step.user.data.url", "URL or IP address of the PiKVM device"
-                )
-                if self.translations
-                else "URL or IP address of the PiKVM device",
-                "username": self.translations(
+                ),
+                "username": _translate(
                     "step.user.data.username", "Username for PiKVM"
                 ),
-                "password": self.translations(
-                    "step.user.data.password", "Password for PiKVM"
-                ),
+                "password": _translate(
+                        "step.user.data.password", "Password for PiKVM"
+                    ),
             },
         )
 
