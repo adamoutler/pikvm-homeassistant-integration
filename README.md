@@ -73,6 +73,13 @@ Once the PiKVM integration is added and configured, you will have several sensor
 5. View Logs: View logs with F1 -> Tasks: logs.
 6.  Enable Debug Logging: For higher detail in logs, enable debug logging in the Home Assistant integration.
 
+### Running Tests
+
+1. (Optional) Create and activate a virtual environment for development.
+2. Install the test dependencies with `pip install -r requirements_test.txt` (add `--break-system-packages` when using the provided dev container).
+3. Execute the test suite with `pytest` from the repository root.
+4. To run a subset, target a path such as `pytest tests/test_config_flow.py`.
+
 ## Script for Development
 
 A script is included to automatically link the repository to the correct directory for development. This script will run when you open the workspace.
