@@ -275,12 +275,12 @@ class PiKVMConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 "username": _translate(
                     "step.user.data.username", "Username for PiKVM"
                 ),
+                "password": _translate(
+                    "step.user.data.password", "Password for PiKVM"
+                ),
                 "totp": _translate(
                     "step.user.data.totp", "2FA secret for PiKVM (if enabled)"
                 ),
-                "password": _translate(
-                    "step.user.data.password", "Password for PiKVM"
-                )
             },
         )
 
