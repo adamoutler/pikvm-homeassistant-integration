@@ -50,7 +50,7 @@ class PiKVMMemoryUtilizationSensor(PiKVMBaseSensor):
     @property
     def available(self):
         """Return True if the sensor data is available."""
-        return "mem" in get_nested_value(self.coordinator.data, ["hw", "health"])
+        return "mem" in get_nested_value(self.coordinator.data, ["hw", "health"], {})
 
     @property
     def unit_of_measurement(self):

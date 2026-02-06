@@ -104,7 +104,7 @@ def get_nested_value(data, keys, default=None):
             data = data.get(key, {})
         else:
             return default
-    return data if data else default
+    return data if data != {} else default
 
 
 def bytes_to_mb(bytes_value):
