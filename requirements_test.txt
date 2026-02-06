@@ -1,5 +1,5 @@
 # Test dependencies for the PiKVM Home Assistant integration
-homeassistant>=2024.10.0,<2025.0.0
+homeassistant>=2024.10.0,<2027.0.0
 josepy>=1.13.0,<2.0.0
 zeroconf==0.136.0
 pytest>=8.0.0,<9.0.0
