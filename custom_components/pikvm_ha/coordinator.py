@@ -120,7 +120,8 @@ class PiKVMDataUpdateCoordinator(DataUpdateCoordinator):
                 data_msd = response_msd.json().get("result")
 
                 if data_info is None:
-                    raise UpdateFailed("API response missing 'result' for info")
+                    _LOGGER.debug("API response missing 'result' for info at %s", self.url)
+                    return None
 
                 data_info["msd"] = data_msd
                 _LOGGER.debug("Received PiKVM Info & MSD from %s", self.url)
@@ -143,7 +144,9 @@ class PiKVMDataUpdateCoordinator(DataUpdateCoordinator):
                     _LOGGER.debug(
                         "Max retries exceeded. Error communicating with API: %s", err
                     )
-                    raise UpdateFailed(f"Error communicating with API: {err}") from err
+                    # Return None instead of raising UpdateFailed to avoid log spam.
+                    # Entities will handle None data and show as unavailable.
+                    return None
             except (ValueError, KeyError) as e:
                 _LOGGER.error("Data processing error: %s", e)
                 raise UpdateFailed(f"Data processing error: {e}") from e
