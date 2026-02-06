@@ -5,7 +5,10 @@ import re
 import pyotp
 
 from homeassistant import config_entries
-from homeassistant.helpers.service_info.zeroconf import ZeroconfServiceInfo
+try:
+    from homeassistant.helpers.service_info.zeroconf import ZeroconfServiceInfo
+except ImportError:
+    from homeassistant.components.zeroconf import ZeroconfServiceInfo
 from homeassistant.core import callback
 
 from .cert_handler import fetch_serialized_cert, is_pikvm_device
@@ -39,7 +42,7 @@ async def perform_device_setup(flow_handler, user_input):
     host = user_input[CONF_HOST]
     username = user_input[CONF_USERNAME]
     password = user_input[CONF_PASSWORD]
-    totp_secret = user_input[CONF_TOTP]
+    totp_secret = user_input.get(CONF_TOTP, "")
 
     _LOGGER.debug(
         "Entered perform_device_setup with URL %s, username %s", host, username
@@ -155,6 +158,7 @@ class PiKVMConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             discovery_info.properties.get("model"),
         )
         existing_entry = find_existing_entry(self, serial)
+        existing_totp = ""
         if existing_entry:
             _LOGGER.debug(
                 "Device with serial %s already configured, updating existing entry",

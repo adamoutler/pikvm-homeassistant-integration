@@ -7,7 +7,10 @@ from homeassistant.core import HomeAssistant
 import logging
 from homeassistant import config_entries
 from homeassistant.helpers.translation import async_get_translations
-from homeassistant.helpers.service_info.zeroconf import ZeroconfServiceInfo
+try:
+    from homeassistant.helpers.service_info.zeroconf import ZeroconfServiceInfo
+except ImportError:
+    from homeassistant.components.zeroconf import ZeroconfServiceInfo
 
 from .const import (
     CONF_HOST,
