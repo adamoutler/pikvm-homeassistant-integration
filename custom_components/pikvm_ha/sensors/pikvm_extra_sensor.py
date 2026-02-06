@@ -3,6 +3,7 @@
 from homeassistant.const import EntityCategory
 
 from ..sensor import PiKVMBaseSensor
+from ..utils import get_nested_value
 
 
 class PiKVMExtraSensor(PiKVMBaseSensor):
@@ -27,17 +28,23 @@ class PiKVMExtraSensor(PiKVMBaseSensor):
             sensor_name,
             icon=icon,
         )
-        self._data = data
+        self._extra_name = name
         self._attr_entity_category = EntityCategory.DIAGNOSTIC
 
     @property
     def state(self):
         """Return the state of the sensor."""
-        return self._data.get("enabled", False)
+        extra_data = get_nested_value(
+            self.coordinator.data, ["extras", self._extra_name], {}
+        )
+        return extra_data.get("enabled", False)
 
     @property
     def extra_state_attributes(self):
         """Return the state attributes."""
         attributes = super().extra_state_attributes
-        attributes.update(self._data)
+        extra_data = get_nested_value(
+            self.coordinator.data, ["extras", self._extra_name], {}
+        )
+        attributes.update(extra_data)
         return attributes
