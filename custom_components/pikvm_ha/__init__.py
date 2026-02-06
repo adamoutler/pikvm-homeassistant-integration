@@ -82,7 +82,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         entry.data[CONF_HOST],
         entry.data[CONF_USERNAME],
         entry.data[CONF_PASSWORD],
-        entry.data[CONF_TOTP],
+        entry.data.get(CONF_TOTP, ""),
         entry.data[CONF_CERTIFICATE],  # Pass the serialized certificate
     )
     await coordinator.async_setup()

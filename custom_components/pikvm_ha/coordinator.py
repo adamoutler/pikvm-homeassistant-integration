@@ -43,6 +43,7 @@ class PiKVMDataUpdateCoordinator(DataUpdateCoordinator):
         self.url = format_url(url)
         self.username = username
         self.password = password
+        self.totp = None
         if len(totp) > 0:
             self.totp = pyotp.TOTP(totp)
         self.cert = cert
