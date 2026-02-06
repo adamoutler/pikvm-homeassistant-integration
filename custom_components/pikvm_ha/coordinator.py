@@ -59,8 +59,9 @@ class PiKVMDataUpdateCoordinator(DataUpdateCoordinator):
         
     def get_auth(self):
         auth = HTTPBasicAuth(self.username, self.password)
-        if self.totp:
-            auth.password += self.totp.now()
+        totp = getattr(self, "totp", None)
+        if totp:
+            auth.password += totp.now()
         
         return auth
 
