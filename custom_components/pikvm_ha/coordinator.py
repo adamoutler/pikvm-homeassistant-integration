@@ -72,7 +72,7 @@ class PiKVMDataUpdateCoordinator(DataUpdateCoordinator):
         """Create the session with the certificate."""
         # self.auth is already defined in __init__
         self.auth = HTTPBasicAuth(self.username, self.password)
-        session_with_cert = await create_session_with_cert(self.cert)
+        session_with_cert = await create_session_with_cert(self.hass, self.cert)
         self.session, self.cert_file_path = session_with_cert
         if not self.session:
             _LOGGER.debug("Failed to create session with certificate")
@@ -91,7 +91,11 @@ class PiKVMDataUpdateCoordinator(DataUpdateCoordinator):
                 _LOGGER.debug("Fetching PiKVM Info & MSD at %s", self.url)
 
                 if not self.session:
-                    self._create_session()
+                    await self._create_session()
+
+                if not self.session:
+                    _LOGGER.debug("No session available for update")
+                    return None
 
                 response = await self.hass.async_add_executor_job(
                     functools.partial(
