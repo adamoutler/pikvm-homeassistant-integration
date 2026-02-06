@@ -72,13 +72,13 @@ class PiKVMDataUpdateCoordinator(DataUpdateCoordinator):
 
     async def _create_session(self):
         """Create the session with the certificate."""
-        # self.auth is already defined in __init__
-        self.auth = HTTPBasicAuth(self.username, self.password)
+        auth = self.get_auth()
         session_with_cert = await create_session_with_cert(self.hass, self.cert)
         self.session, self.cert_file_path = session_with_cert
         if not self.session:
             _LOGGER.debug("Failed to create session with certificate")
         else:
+            self.session.auth = auth
             _LOGGER.debug("Session created successfully")
 
     async def _async_update_data(self):
