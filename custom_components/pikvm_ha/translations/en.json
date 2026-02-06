@@ -5,7 +5,8 @@
         "data": {
           "url": "URL or IP address of the PiKVM device",
           "username": "Username for PiKVM",
-          "password": "Password for PiKVM"
+          "password": "Password for PiKVM",
+          "totp": "2FA secret for PiKVM (if enabled)"
         }
       }
     },

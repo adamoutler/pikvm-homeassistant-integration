@@ -19,6 +19,7 @@ from .const import (
     CONF_PASSWORD,
     CONF_SERIAL,
     CONF_USERNAME,
+    CONF_TOTP,
     DEFAULT_PASSWORD,
     DEFAULT_USERNAME,
     DOMAIN,
@@ -37,6 +38,7 @@ CONFIG_SCHEMA = vol.Schema(
                 vol.Required(CONF_HOST): cv.url,
                 vol.Optional(CONF_USERNAME, default=DEFAULT_USERNAME): cv.string,
                 vol.Optional(CONF_PASSWORD, default=DEFAULT_PASSWORD): cv.string,
+                vol.Optional(CONF_TOTP, default=""): cv.string,
             }
         )
     },
@@ -79,6 +81,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         entry.data[CONF_HOST],
         entry.data[CONF_USERNAME],
         entry.data[CONF_PASSWORD],
+        entry.data[CONF_TOTP],
         entry.data[CONF_CERTIFICATE],  # Pass the serialized certificate
     )
     await coordinator.async_setup()
