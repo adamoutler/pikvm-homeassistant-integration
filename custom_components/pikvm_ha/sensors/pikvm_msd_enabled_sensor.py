@@ -5,6 +5,9 @@ from homeassistant.const import EntityCategory
 from ..sensor import PiKVMBaseSensor
 
 
+from ..utils import get_nested_value
+
+
 class PiKVMSDEnabledSensor(PiKVMBaseSensor):
     """Representation of a PiKVM MSD enabled sensor."""
 
@@ -23,4 +26,4 @@ class PiKVMSDEnabledSensor(PiKVMBaseSensor):
     @property
     def state(self) -> bool:
         """Return the state of the sensor."""
-        return self.coordinator.data["msd"]["enabled"]
+        return get_nested_value(self.coordinator.data, ["msd", "enabled"], False)

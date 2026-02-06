@@ -7,6 +7,7 @@ from homeassistant.helpers import temperature
 
 from .. import PiKVMDataUpdateCoordinator
 from ..sensor import PiKVMBaseSensor
+from ..utils import get_nested_value
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -42,7 +43,7 @@ class PiKVMCpuTempSensor(PiKVMBaseSensor):
     @property
     def state(self):
         """Return the state of the sensor in preferred units."""
-        value = self.coordinator.data["hw"]["health"]["temp"]["cpu"]
+        value = get_nested_value(self.coordinator.data, ["hw", "health", "temp", "cpu"])
         try:
             temp_value = float(value)
         except (TypeError, ValueError):

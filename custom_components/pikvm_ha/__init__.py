@@ -27,6 +27,7 @@ from .const import (
 )
 from .coordinator import PiKVMDataUpdateCoordinator
 from .sensor import PiKVMEntity
+from .utils import get_nested_value
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -88,16 +89,20 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     await coordinator.async_config_entry_first_refresh()
 
     hass.data[DOMAIN][entry.entry_id] = coordinator
+
+    # Retrieve hardware and system information safely
+    platform = get_nested_value(coordinator.data, ["hw", "platform"], {})
+    kvmd = get_nested_value(coordinator.data, ["system", "kvmd"], {})
+
     PiKVMEntity.DEVICE_INFO = DeviceInfo(
         identifiers={(DOMAIN, entry.data[CONF_SERIAL])},
         configuration_url=format_url(entry.data[CONF_HOST]),
         serial_number=entry.data[CONF_SERIAL],
         manufacturer=MANUFACTURER,
         name=entry.title,
-        model=coordinator.data["hw"]["platform"].get("model")
-        or coordinator.data["hw"]["platform"].get("type"),
-        hw_version=coordinator.data["hw"]["platform"].get("base"),
-        sw_version=coordinator.data["system"]["kvmd"].get("version"),
+        model=platform.get("model") or platform.get("type"),
+        hw_version=platform.get("base"),
+        sw_version=kvmd.get("version"),
     )
 
     # Perform the platform setup outside the event loop to avoid blocking

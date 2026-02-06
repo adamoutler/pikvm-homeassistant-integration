@@ -33,7 +33,7 @@ class PiKVMExtraSensor(PiKVMBaseSensor):
     @property
     def state(self):
         """Return the state of the sensor."""
-        return self._data["enabled"]
+        return self._data.get("enabled", False)
 
     @property
     def extra_state_attributes(self):

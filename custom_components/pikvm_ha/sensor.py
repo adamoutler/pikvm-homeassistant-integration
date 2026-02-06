@@ -59,7 +59,9 @@ async def async_setup_entry(
     _LOGGER.debug("Setting up PiKVM sensors from config entry")
     coordinator = hass.data[DOMAIN][config_entry.entry_id]
     unique_id_base = get_unique_id_base(config_entry, coordinator)
-    device_name = coordinator.data["meta"]["server"]["host"]
+    device_name = get_nested_value(
+        coordinator.data, ["meta", "server", "host"], "pikvm"
+    )
 
     # Use "pikvm" if the device name is "localhost.localdomain"
     if device_name == "localhost.localdomain":
@@ -86,7 +88,8 @@ async def async_setup_entry(
     ]
 
     # Dynamically create sensors for extras
-    for extra_name, extra_data in coordinator.data["extras"].items():
+    extras = get_nested_value(coordinator.data, ["extras"], {})
+    for extra_name, extra_data in extras.items():
         sensors.append(
             sensor_classes["extra"](
                 coordinator,

@@ -106,7 +106,7 @@ class PiKVMDataUpdateCoordinator(DataUpdateCoordinator):
                     raise AuthenticationFailed("Invalid username or password")  # noqa: TRY301
 
                 response.raise_for_status()
-                data_info = response.json()["result"]
+                data_info = response.json().get("result")
 
                 response_msd = await self.hass.async_add_executor_job(
                     functools.partial(
@@ -117,7 +117,10 @@ class PiKVMDataUpdateCoordinator(DataUpdateCoordinator):
                     )
                 )
                 response_msd.raise_for_status()
-                data_msd = response_msd.json()["result"]
+                data_msd = response_msd.json().get("result")
+
+                if data_info is None:
+                    raise UpdateFailed("API response missing 'result' for info")
 
                 data_info["msd"] = data_msd
                 _LOGGER.debug("Received PiKVM Info & MSD from %s", self.url)

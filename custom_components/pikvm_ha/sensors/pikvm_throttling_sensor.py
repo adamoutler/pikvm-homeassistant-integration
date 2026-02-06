@@ -1,6 +1,7 @@
 """Support for PiKVM throttling sensor."""
 
 from ..sensor import PiKVMBaseSensor
+from ..utils import get_nested_value
 
 
 class PiKVMThrottlingSensor(PiKVMBaseSensor):
@@ -20,16 +21,14 @@ class PiKVMThrottlingSensor(PiKVMBaseSensor):
     @property
     def state(self):
         """Return the state of the sensor."""
-        return (
-            self.coordinator.data["hw"]["health"]
-            .get("throttling", {})
-            .get("raw_flags", 0)
-        )
+        health = get_nested_value(self.coordinator.data, ["hw", "health"], {})
+        return health.get("throttling", {}).get("raw_flags", 0)
 
     @property
     def extra_state_attributes(self) -> dict:
         """Return the state attributes."""
-        throttling_data = self.coordinator.data["hw"]["health"].get("throttling", {})
+        health = get_nested_value(self.coordinator.data, ["hw", "health"], {})
+        throttling_data = health.get("throttling", {})
         flattened_data = {}
         for key, value in throttling_data.items():
             if isinstance(value, dict):

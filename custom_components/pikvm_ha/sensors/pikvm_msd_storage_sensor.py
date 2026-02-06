@@ -3,6 +3,7 @@
 import logging
 
 from ..sensor import PiKVMBaseSensor
+from ..utils import get_nested_value
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -24,8 +25,7 @@ class PiKVMSDStorageSensor(PiKVMBaseSensor):
 
     @property
     def state(self):
-        coordinator_data = getattr(self.coordinator, "data", {}) or {}
-        storage = coordinator_data.get("msd", {}).get("storage", {})
+        storage = get_nested_value(self.coordinator.data, ["msd", "storage"], {})
         total = storage.get("size")
         free = storage.get("free")
         if total is None or free is None or total <= 0:
@@ -37,8 +37,7 @@ class PiKVMSDStorageSensor(PiKVMBaseSensor):
     def extra_state_attributes(self):
         """Return the state attributes."""
         attributes = super().extra_state_attributes
-        coordinator_data = getattr(self.coordinator, "data", {}) or {}
-        storage_data = coordinator_data.get("msd", {}).get("storage", {}) or {}
+        storage_data = get_nested_value(self.coordinator.data, ["msd", "storage"], {})
         images = storage_data.get("images", {}) or {}
 
         if storage_data:

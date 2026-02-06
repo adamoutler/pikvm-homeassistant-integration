@@ -82,7 +82,8 @@ async def get_translations(hass: HomeAssistant, language, domain):
 
 def get_unique_id_base(config_entry, coordinator):
     """Generate the unique_id_base for the sensors."""
-    return f"{config_entry.entry_id}_{coordinator.data['hw']['platform']['serial']}"
+    serial = get_nested_value(coordinator.data, ["hw", "platform", "serial"], "unknown")
+    return f"{config_entry.entry_id}_{serial}"
 
 
 def get_nested_value(data, keys, default=None):
@@ -93,8 +94,13 @@ def get_nested_value(data, keys, default=None):
     :param default: The default value to return if the keys are not found.
     :return: The value found or the default value.
     """
+    if data is None:
+        return default
     for key in keys:
-        data = data.get(key, {})
+        if isinstance(data, dict):
+            data = data.get(key, {})
+        else:
+            return default
     return data if data else default
 
 
