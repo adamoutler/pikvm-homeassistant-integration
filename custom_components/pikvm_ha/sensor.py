@@ -11,7 +11,7 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .const import DOMAIN
 from .entity import PiKVMEntity
-from .utils import get_unique_id_base
+from .utils import get_nested_value, get_unique_id_base
 
 _LOGGER = logging.getLogger(__name__)
 
