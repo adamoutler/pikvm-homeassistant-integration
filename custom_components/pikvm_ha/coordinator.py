@@ -75,7 +75,7 @@ class PiKVMDataUpdateCoordinator(DataUpdateCoordinator):
         session_with_cert = await create_session_with_cert(self.cert)
         self.session, self.cert_file_path = session_with_cert
         if not self.session:
-            _LOGGER.error("Failed to create session with certificate")
+            _LOGGER.debug("Failed to create session with certificate")
         else:
             _LOGGER.debug("Session created successfully")
 
@@ -129,7 +129,7 @@ class PiKVMDataUpdateCoordinator(DataUpdateCoordinator):
             except requests.exceptions.RequestException as err:
                 retries += 1
                 if retries < max_retries:
-                    _LOGGER.warning(
+                    _LOGGER.debug(
                         "Error communicating with API: %s. Retrying in %s seconds",
                         err,
                         backoff_time,
@@ -137,7 +137,7 @@ class PiKVMDataUpdateCoordinator(DataUpdateCoordinator):
                     await asyncio.sleep(backoff_time)
                     backoff_time *= 2  # Exponential backoff
                 else:
-                    _LOGGER.error(
+                    _LOGGER.debug(
                         "Max retries exceeded. Error communicating with API: %s", err
                     )
                     raise UpdateFailed(f"Error communicating with API: {err}") from err
