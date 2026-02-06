@@ -65,23 +65,23 @@ class PiKVMOptionsFlowHandler(config_entries.OptionsFlow):
                 _LOGGER.debug("Serialized certificate: %s", serialized_cert)
                 user_input[CONF_CERTIFICATE] = serialized_cert
 
-                is_pikvm, serial, name = await is_pikvm_device(
+                response = await is_pikvm_device(
                     self.hass, url, username, password + totp_code, serialized_cert
                 )
-                if name is None or name == "localhost.localdomain":
+                if response.name is None or response.name == "localhost.localdomain":
                     name = DOMAIN
-                elif name.startswith("Exception_"):
-                    errors["base"] = name
-                elif is_pikvm:
+                elif response.name.startswith("Exception_"):
+                    errors["base"] = response.name
+                elif response.success:
                     _LOGGER.debug(
                         "PiKVM device successfully found at %s with serial %s",
                         url,
-                        serial,
+                        response.serial,
                     )
 
                     existing_entry = None
                     for entry in self.hass.config_entries.async_entries(DOMAIN):
-                        if entry.unique_id == serial:
+                        if entry.unique_id == response.serial:
                             existing_entry = entry
                             break
 
@@ -89,7 +89,7 @@ class PiKVMOptionsFlowHandler(config_entries.OptionsFlow):
                         update_existing_entry(self.hass, existing_entry, user_input)
                         return self.async_create_entry(title="", data={})
 
-                    user_input["serial"] = serial
+                    user_input["serial"] = response.serial
                     new_data = {**self.config_entry.data, **user_input}
                     self.hass.config_entries.async_update_entry(
                         self.config_entry, data=new_data
@@ -164,23 +164,23 @@ async def handle_user_input(self, user_input):
     _LOGGER.debug("Serialized certificate: %s", serialized_cert)
     user_input[CONF_CERTIFICATE] = serialized_cert
 
-    is_pikvm, serial, name = await is_pikvm_device(
+    response = await is_pikvm_device(
         self.hass, url, username, password + totp_code, serialized_cert
     )
-    if name is None or name == "localhost.localdomain":
+    if response.name is None or response.name == "localhost.localdomain":
         name = DOMAIN
-    elif name.startswith("Exception_"):
-        errors["base"] = name
+    elif response.name.startswith("Exception_"):
+        errors["base"] = response.name
         return None, errors
 
-    if is_pikvm:
+    if response.success:
         _LOGGER.debug(
-            "PiKVM device successfully found at %s with serial %s", url, serial
+            "PiKVM device successfully found at %s with serial %s", url, response.serial
         )
 
         existing_entry = None
         for entry in self.hass.config_entries.async_entries(DOMAIN):
-            if entry.unique_id == serial:
+            if entry.unique_id == response.serial:
                 existing_entry = entry
                 break
 
@@ -188,11 +188,11 @@ async def handle_user_input(self, user_input):
             update_existing_entry(self.hass, existing_entry, user_input)
             return self.async_create_entry(title="", data={})
 
-        user_input["serial"] = serial
-        await self.async_set_unique_id(serial)
+        user_input["serial"] = response.serial
+        await self.async_set_unique_id(response.serial)
         self._abort_if_unique_id_configured()
         config_flow_result = self.async_create_entry(
-            title=name if name else MANUFACTURER, data=user_input
+            title=response.name if response.name else MANUFACTURER, data=user_input
         )
 
         return config_flow_result, None

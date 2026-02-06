@@ -6,6 +6,11 @@ import pytest
 from homeassistant.data_entry_flow import FlowResultType
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
+from custom_components.pikvm_ha.cert_handler import (
+    PiKVMResponse,
+    fetch_serialized_cert,
+    is_pikvm_device,
+)
 from custom_components.pikvm_ha.const import (
     CONF_CERTIFICATE,
     CONF_HOST,
@@ -59,7 +64,11 @@ async def test_options_flow_updates_entry(hass):
             ),
             patch(
                 "custom_components.pikvm_ha.options_flow.is_pikvm_device",
-                new=AsyncMock(return_value=(True, "pikvm-9999", "My PiKVM")),
+                new=AsyncMock(
+                    return_value=PiKVMResponse(
+                        True, "model", "pikvm-9999", "My PiKVM", None
+                    )
+                ),
             ),
         ):
             result = await hass.config_entries.options.async_configure(
@@ -110,7 +119,11 @@ async def test_options_flow_localhost_name_fallback(hass):
         ),
         patch(
             "custom_components.pikvm_ha.options_flow.is_pikvm_device",
-            new=AsyncMock(return_value=(True, "pikvm-1111", "localhost.localdomain")),
+            new=AsyncMock(
+                return_value=PiKVMResponse(
+                    True, "model", "pikvm-1111", "localhost.localdomain", None
+                )
+            ),
         ),
     ):
         result = await flow.async_step_init(user_input=new_user_input)
@@ -180,7 +193,11 @@ async def test_options_flow_exception_error(hass):
             ),
             patch(
                 "custom_components.pikvm_ha.options_flow.is_pikvm_device",
-                new=AsyncMock(return_value=(True, "serial", "Exception_error")),
+                new=AsyncMock(
+                    return_value=PiKVMResponse(
+                        True, "model", "serial", "Exception_error", None
+                    )
+                ),
             ),
         ):
             result = await hass.config_entries.options.async_configure(
@@ -228,7 +245,11 @@ async def test_options_flow_existing_entry_updates(hass):
             ),
             patch(
                 "custom_components.pikvm_ha.options_flow.is_pikvm_device",
-                new=AsyncMock(return_value=(True, "pikvm-9999", "My PiKVM")),
+                new=AsyncMock(
+                    return_value=PiKVMResponse(
+                        True, "model", "pikvm-9999", "My PiKVM", None
+                    )
+                ),
             ),
             patch(
                 "custom_components.pikvm_ha.options_flow.update_existing_entry",
@@ -268,7 +289,9 @@ async def test_options_flow_cannot_connect(hass):
         ),
         patch(
             "custom_components.pikvm_ha.options_flow.is_pikvm_device",
-            new=AsyncMock(return_value=(False, "SERIAL", "My PiKVM")),
+            new=AsyncMock(
+                return_value=PiKVMResponse(False, "model", "SERIAL", "My PiKVM", None)
+            ),
         ),
     ):
         result = await flow.async_step_init(
@@ -315,7 +338,9 @@ async def test_handle_user_input_creates_new_entry(hass):
         ),
         patch(
             "custom_components.pikvm_ha.options_flow.is_pikvm_device",
-            new=AsyncMock(return_value=(True, "SERIAL123", None)),
+            new=AsyncMock(
+                return_value=PiKVMResponse(True, "model", "SERIAL123", None, None)
+            ),
         ),
         patch(
             "custom_components.pikvm_ha.options_flow.update_existing_entry"
@@ -360,7 +385,11 @@ async def test_handle_user_input_existing_entry(hass):
         ),
         patch(
             "custom_components.pikvm_ha.options_flow.is_pikvm_device",
-            new=AsyncMock(return_value=(True, "SERIAL123", "My PiKVM")),
+            new=AsyncMock(
+                return_value=PiKVMResponse(
+                    True, "model", "SERIAL123", "My PiKVM", None
+                )
+            ),
         ),
         patch(
             "custom_components.pikvm_ha.options_flow.update_existing_entry",
@@ -398,7 +427,11 @@ async def test_handle_user_input_exception_error(hass):
         ),
         patch(
             "custom_components.pikvm_ha.options_flow.is_pikvm_device",
-            new=AsyncMock(return_value=(True, "SERIAL", "Exception_problem")),
+            new=AsyncMock(
+                return_value=PiKVMResponse(
+                    True, "model", "SERIAL", "Exception_problem", None
+                )
+            ),
         ),
     ):
         result, errors = await handle_user_input(
@@ -448,7 +481,9 @@ async def test_handle_user_input_cannot_connect(hass):
         ),
         patch(
             "custom_components.pikvm_ha.options_flow.is_pikvm_device",
-            new=AsyncMock(return_value=(False, None, None)),
+            new=AsyncMock(
+                return_value=PiKVMResponse(False, None, None, None, None)
+            ),
         ),
     ):
         result, errors = await handle_user_input(
