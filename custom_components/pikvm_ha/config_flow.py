@@ -5,7 +5,7 @@ import re
 import pyotp
 
 from homeassistant import config_entries
-from homeassistant.components.zeroconf import ZeroconfServiceInfo
+from homeassistant.helpers.service_info.zeroconf import ZeroconfServiceInfo
 from homeassistant.core import callback
 
 from .cert_handler import fetch_serialized_cert, is_pikvm_device
