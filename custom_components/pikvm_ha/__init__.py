@@ -94,7 +94,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     platform = get_nested_value(coordinator.data, ["hw", "platform"], {})
     kvmd = get_nested_value(coordinator.data, ["system", "kvmd"], {})
 
-    PiKVMEntity.DEVICE_INFO = DeviceInfo(
+    coordinator.device_info = DeviceInfo(
         identifiers={(DOMAIN, entry.data[CONF_SERIAL])},
         configuration_url=format_url(entry.data[CONF_HOST]),
         serial_number=entry.data[CONF_SERIAL],

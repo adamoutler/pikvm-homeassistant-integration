@@ -13,7 +13,6 @@ _LOGGER = logging.getLogger(__name__)
 class PiKVMEntity(CoordinatorEntity):
     """Base class for a PiKVM entity."""
 
-    DEVICE_INFO: DeviceInfo | None = None
     coordinator: PiKVMDataUpdateCoordinator
 
     def __init__(
@@ -22,6 +21,5 @@ class PiKVMEntity(CoordinatorEntity):
         """Initialize the entity."""
         super().__init__(coordinator)
         self.coordinator = coordinator
-        self._attr_device_info = self.DEVICE_INFO
+        self._attr_device_info = coordinator.device_info
         self._attr_unique_id_base = unique_id_base
-        self._attr_device_info = self.DEVICE_INFO

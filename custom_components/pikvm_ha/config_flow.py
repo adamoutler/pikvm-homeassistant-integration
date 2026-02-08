@@ -142,7 +142,9 @@ class PiKVMConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     # lets filter out the zeroconf discovery of ipv6 addresses
     async def async_step_zeroconf(self, discovery_info: ZeroconfServiceInfo) -> config_entries.ConfigFlowResult:
         """Handle the ZeroConf discovery step."""
-        serial = discovery_info.properties.get("serial").lower()
+        serial = discovery_info.properties.get("serial")
+        if serial:
+            serial = serial.lower()
         host = discovery_info.host
         if not serial or not host:
             _LOGGER.debug("Discovered device with ZeroConf but missing serial or host")

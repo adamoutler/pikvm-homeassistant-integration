@@ -11,6 +11,7 @@ import requests
 from requests.auth import HTTPBasicAuth
 
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
 from .cert_handler import create_session_with_cert  # Import the function
@@ -34,6 +35,7 @@ class PiKVMDataUpdateCoordinator(DataUpdateCoordinator):
     """Class to manage fetching data from the PiKVM API."""
 
     url: str = ""
+    device_info: DeviceInfo | None = None
 
     def __init__(
         self, hass: HomeAssistant, url: str, username: str, password: str, totp: str, cert: str
@@ -49,6 +51,7 @@ class PiKVMDataUpdateCoordinator(DataUpdateCoordinator):
         self.cert = cert
         self.session = None
         self.cert_file_path = None
+        self.device_info = None
         super().__init__(
             hass,
             _LOGGER,

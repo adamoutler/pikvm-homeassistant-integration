@@ -124,16 +124,16 @@ class PiKVMOptionsFlowHandler(config_entries.OptionsFlow):
             errors=errors,
             description_placeholders={
                 "url": self.translate(
-                    "config.step.user.data.url", "URL or IP address of the PiKVM device"
+                    "step.user.data.url", "URL or IP address of the PiKVM device"
                 ),
                 "username": self.translate(
-                    "config.step.user.data.username", "Username for PiKVM"
+                    "step.user.data.username", "Username for PiKVM"
                 ),
                 "password": self.translate(
-                    "config.step.user.data.password", "Password for PiKVM"
+                    "step.user.data.password", "Password for PiKVM"
                 ),
                 "totp": self.translate(
-                    "config.step.user.data.totp", "2FA secret for PiKVM (if enabled)"
+                    "step.user.data.totp", "2FA secret for PiKVM (if enabled)"
                 )
             },
         )
