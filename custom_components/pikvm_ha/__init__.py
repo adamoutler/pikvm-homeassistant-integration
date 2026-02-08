@@ -8,9 +8,9 @@ import voluptuous as vol
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 import homeassistant.helpers.config_validation as cv
+from homeassistant.helpers import device_registry as dr, entity_registry as er
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.typing import ConfigType
-from homeassistant.loader import async_get_integration
 
 from .cert_handler import format_url
 from .const import (
@@ -26,7 +26,7 @@ from .const import (
     MANUFACTURER,
 )
 from .coordinator import PiKVMDataUpdateCoordinator
-from .sensor import PiKVMEntity
+from .entity import PiKVMEntity
 from .utils import get_nested_value
 
 _LOGGER = logging.getLogger(__name__)
@@ -53,23 +53,11 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
-    """Set up PiKVM from a config entry.
-
-    This function is responsible for setting up the PiKVM integration in Home Assistant
-    based on the provided config entry.
-
-    Args:
-        hass (HomeAssistant): The Home Assistant instance.
-        entry (ConfigEntry): The config entry for the PiKVM integration.
-
-    Returns:
-        bool: True if the setup was successful, False otherwise.
-
-    """
+    """Set up PiKVM from a config entry."""
     hass.data.setdefault(DOMAIN, {})
 
     # Retrieve the unique ID and serial number from the config entry
-    stored_serial = entry.data.get("serial", None)
+    stored_serial = entry.data.get(CONF_SERIAL)
     unique_id = entry.unique_id
 
     # Check if the unique ID matches the stored serial number
@@ -83,8 +71,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         entry.data[CONF_USERNAME],
         entry.data[CONF_PASSWORD],
         entry.data.get(CONF_TOTP, ""),
-        entry.data[CONF_CERTIFICATE],  # Pass the serialized certificate
+        entry.data[CONF_CERTIFICATE],
     )
+    
     await coordinator.async_setup()
     await coordinator.async_config_entry_first_refresh()
 
@@ -105,39 +94,34 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         sw_version=kvmd.get("version"),
     )
 
-    # Perform the platform setup outside the event loop to avoid blocking
-    async def forward_platform():
-        integration = await async_get_integration(hass, DOMAIN)
-        # Run tasks concurrently if possible
+    # Forward the setup to the sensor platform
+    await hass.config_entries.async_forward_entry_setups(entry, ["sensor"])
 
-        await asyncio.gather(
-            hass.async_add_executor_job(integration.get_platform, "sensor"),
-            hass.config_entries.async_forward_entry_setups(entry, ["sensor"]),
-        )
-
-    hass.async_create_task(forward_platform())
+    # Clean up orphaned devices that were created by previous versions
+    await _async_cleanup_devices(hass, entry)
 
     entry.async_on_unload(entry.add_update_listener(update_listener))
 
     return True
 
 
+async def _async_cleanup_devices(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    """Remove devices that have no entities and belong to this config entry."""
+    dev_reg = dr.async_get(hass)
+    ent_reg = er.async_get(hass)
+    
+    devices = dr.async_entries_for_config_entry(dev_reg, entry.entry_id)
+    for device in devices:
+        entities = er.async_entries_for_device(ent_reg, device.id, include_disabled_entities=True)
+        if not entities:
+            _LOGGER.info("Removing orphaned PiKVM device: %s", device.name)
+            dev_reg.async_remove_device(device.id)
+
+
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
-    """Unload a config entry.
-
-    This function is responsible for unloading a configuration entry in Home Assistant.
-    It forwards the entry unload signal to the 'sensor' component and removes the entry from the 'pikvm' domain data.
-
-    Args:
-        hass (HomeAssistant): The Home Assistant instance.
-        entry (ConfigEntry): The configuration entry to unload.
-
-    Returns:
-        bool: True if the entry was successfully unloaded, False otherwise.
-
-    """
+    """Unload a config entry."""
     await hass.config_entries.async_forward_entry_unload(entry, "sensor")
-    hass.data[DOMAIN].pop(entry.entry_id)
+    hass.data[DOMAIN].pop(entry.entry_id, None)
 
     return True
 
@@ -148,20 +132,9 @@ async def update_listener(hass: HomeAssistant, entry: ConfigEntry) -> None:
 
 
 async def async_remove_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
-    """Handle removal of a config entry.
-
-    This function is responsible for cleaning up any resources associated with the device
-    when a configuration entry is removed from Home Assistant.
-
-    Args:
-        hass (HomeAssistant): The Home Assistant instance.
-        entry (ConfigEntry): The configuration entry to remove.
-    """
+    """Handle removal of a config entry."""
     # Forward the entry removal signal to the 'sensor' component
     await hass.config_entries.async_forward_entry_unload(entry, "sensor")
 
     # Remove the entry from the 'pikvm' domain data
     hass.data[DOMAIN].pop(entry.entry_id, None)
-
-    # Perform any additional cleanup here if necessary
-    # For example, remove any persistent notifications, stop background tasks, etc.
