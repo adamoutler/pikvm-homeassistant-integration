@@ -3,6 +3,7 @@
 import logging
 import re
 import pyotp
+import binascii
 
 from homeassistant import config_entries
 try:
@@ -51,7 +52,12 @@ async def perform_device_setup(flow_handler, user_input):
     try:
         if len(totp_secret) > 0:
             # Generate 2FA code from provided TOTP secret
-            totp_code = pyotp.TOTP(totp_secret).now()
+            try:
+                totp_code = pyotp.TOTP(totp_secret).now()
+            except binascii.Error:
+                _LOGGER.debug("Invalid base32 string for TOTP secret")
+                errors["base"] = "invalid_totp"
+                return None, errors
         else:
             totp_code = ""
         

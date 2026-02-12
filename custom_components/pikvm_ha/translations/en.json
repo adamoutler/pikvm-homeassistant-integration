@@ -17,7 +17,8 @@
       "cannot_fetch_cert": "Cannot fetch certificate",
       "cannot_connect": "Cannot connect to PiKVM device",
       "Exception_HTTP403": "Invalid username or password",
-      "Exception_HTTP502": "Bad Gateway. PiKVM isn't ready yet."
+      "Exception_HTTP502": "Bad Gateway. PiKVM isn't ready yet.",
+      "invalid_totp": "The TOTP secret is not a valid base32 string."
     }
   }
 }
