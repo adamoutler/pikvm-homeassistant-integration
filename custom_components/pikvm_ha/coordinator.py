@@ -86,8 +86,8 @@ class PiKVMDataUpdateCoordinator(DataUpdateCoordinator):
 
     async def _async_update_data(self):
         """Fetch data from PiKVM API."""
-        max_retries = 5
-        backoff_time = 2  # Initial backoff time in seconds
+        max_retries = 3
+        backoff_time = 1  # Initial backoff time in seconds
         retries = 0
 
         while retries < max_retries:
@@ -107,7 +107,7 @@ class PiKVMDataUpdateCoordinator(DataUpdateCoordinator):
                         self.session.get,
                         f"{self.url}/api/info",
                         auth=auth,
-                        timeout=10,
+                        timeout=5,
                     )
                 )
 
@@ -122,7 +122,7 @@ class PiKVMDataUpdateCoordinator(DataUpdateCoordinator):
                         self.session.get,
                         f"{self.url}/api/msd",
                         auth=auth,
-                        timeout=10,
+                        timeout=5,
                     )
                 )
                 response_msd.raise_for_status()
