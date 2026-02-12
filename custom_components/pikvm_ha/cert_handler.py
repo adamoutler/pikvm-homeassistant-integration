@@ -217,18 +217,28 @@ async def is_pikvm_device(
         _LOGGER.error("Device check failed: 'ok' key not present or false")
         return PiKVMResponse(False, None, None, None, "GenericException")
 
+    except requests.exceptions.HTTPError as err:
+        _LOGGER.warn("HTTPError checking PiKVM device at %s: %s", url, err)
+        status_code = err.response.status_code
+        if status_code in [401, 403]:
+            return PiKVMResponse(False, None, None, None, "Exception_HTTP403")
+        if status_code == 502:
+            return PiKVMResponse(False, None, None, None, "Exception_HTTP502")
+        # Generic HTTP error
+        _LOGGER.warn("Unhandled HTTP status code: %s", status_code)
+        return PiKVMResponse(False, None, None, None, "unhandled_http_error")
+    except requests.exceptions.ConnectionError as err:
+        _LOGGER.warn("ConnectionError checking PiKVM device at %s: %s", url, err)
+        return PiKVMResponse(False, None, None, None, "cannot_connect")
+    except requests.exceptions.Timeout as err:
+        _LOGGER.warn("Timeout checking PiKVM device at %s: %s", url, err)
+        return PiKVMResponse(False, None, None, None, "timeout")
     except requests.exceptions.RequestException as err:
-        # Handle HTTP errors by returning a code which contains the status code
-        _LOGGER.error("RequestException checking PiKVM device at %s: %s", url, err)
-        error_code = (
-            f"Exception_HTTP{err.response.status_code}"
-            if err.response
-            else "Exception_HTTP"
-        )
-        return PiKVMResponse(False, None, None, None, error_code)
+        _LOGGER.warn("RequestException checking PiKVM device at %s: %s", url, err)
+        return PiKVMResponse(False, None, None, None, "unknown_request_exception")
 
     except ValueError as err:
-        _LOGGER.error("ValueError while parsing response JSON from %s: %s", url, err)
+        _LOGGER.warn("ValueError while parsing response JSON from %s: %s", url, err)
         return PiKVMResponse(False, None, None, None, "Exception_JSON")
 
     finally:
