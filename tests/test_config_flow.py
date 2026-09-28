@@ -27,6 +27,16 @@ from custom_components.pikvm_ha.const import (
 from custom_components.pikvm_ha.options_flow import PiKVMOptionsFlowHandler
 
 
+@pytest.fixture(autouse=True)
+def bypass_setup_entry():
+    """Bypass entry setup during config flow tests."""
+    with patch(
+        "custom_components.pikvm_ha.async_setup_entry",
+        return_value=True,
+    ):
+        yield
+
+
 @pytest.mark.asyncio
 async def test_config_flow_user_success(hass, pikvm_cert):
     """Test a full successful user initiated config flow."""

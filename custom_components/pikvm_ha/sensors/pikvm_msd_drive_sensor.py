@@ -15,7 +15,8 @@ class PiKVMSDDriveSensor(PiKVMBaseSensor):
     @property
     def state(self):
         """Return the state of the sensor."""
-        return get_nested_value(self.coordinator.data, ["msd", "drive", "connected"], False)
+        is_mounted = get_nested_value(self.coordinator.data, ["msd", "drive", "is_mounted"], False)
+        return "on" if is_mounted else "off"
 
     @property
     def extra_state_attributes(self):

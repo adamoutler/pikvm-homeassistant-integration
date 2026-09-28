@@ -1,8 +1,12 @@
-"""Global pytest fixtures for PiKVM integration tests."""
-
-from unittest.mock import AsyncMock, patch
-
 import pytest
+
+# Pre-initialize pycares channel daemon thread so pytest_homeassistant_custom_component's
+# verify_cleanup fixture doesn't flag the background thread as a leak during test execution.
+try:
+    import pycares
+    _channel = pycares.Channel()
+except Exception:
+    pass
 
 pytest_plugins = "pytest_homeassistant_custom_component"
 
@@ -13,34 +17,25 @@ def auto_enable_custom_integrations(enable_custom_integrations):
     yield
 
 
-@pytest.fixture(autouse=True, scope="session")
-def mock_setup_entry_calls():
-    """Avoid setting up the actual integration during config flow tests."""
-    with (
-        patch(
-            "custom_components.pikvm_ha.async_setup_entry",
-            new=AsyncMock(return_value=True),
-        ),
-        patch(
-            "custom_components.pikvm_ha.async_unload_entry",
-            new=AsyncMock(return_value=True),
-        ),
-    ):
-        yield
-
-
 @pytest.fixture
 def pikvm_cert():
     """Return a synthetic PEM certificate used by the unit tests."""
     return (
         "-----BEGIN CERTIFICATE-----\n"
-        "MIIBtjCCAVugAwIBAgIJAO2b2k93r7cKMAoGCCqGSM49BAMCMBUxEzARBgNVBAMM\n"
-        "CnBpa3ZtLmxvY2FsMB4XDTIwMTAxMDEwMDAwMFoXDTMwMDkyNzEwMDAwMFowFTET\n"
-        "MBEGA1UEAwwKcGlrdm0ubG9jYWwwWTATBgcqhkjOPQIBBggqhkjOPQMBBwNCAATL\n"
-        "7fUG9zO7g0ZmXGf1DsKpP+NBo7GdA51N2bYzu3n6PvJEa3TBUnIFVQGryuVKyXjH\n"
-        "fS9Sz3gwxMZ2ymlkAkQHo1MwUTAdBgNVHQ4EFgQUYVtz1xuxMxDPZWS9Vyuk3F7S\n"
-        "LCQwHwYDVR0jBBgwFoAUYVtz1xuxMxDPZWS9Vyuk3F7SLCQwDwYDVR0TAQH/BAUw\n"
-        "AwEB/zAKBggqhkjOPQQDAgNJADBGAiEAi0eZZ+j9RnBbTK1ZBOqVakiobP6KyHRx\n"
-        "0JVpaz6RtNkCIQCNux41DmvNmO6PsK0uFUxnCLzpSw0eVUsVTNff7kwhWA==\n"
+        "MIICuDCCAaCgAwIBAgIUIL17u2WG/dGmmsdQwDwsd7lJueswDQYJKoZIhvcNAQEL\n"
+        "BQAwFjEUMBIGA1UEAwwLcGlrdm0ubG9jYWwwHhcNMjYwOTI4MTY1MjM1WhcNMjcw\n"
+        "OTI4MTY1MjM1WjAWMRQwEgYDVQQDDAtwaWt2bS5sb2NhbDCCASIwDQYJKoZIhvcN\n"
+        "AQEBBQADggEPADCCAQoCggEBANJHnc54/gVYq9d2wtbk1RDr1aHz5Fk5fT7IvjH/\n"
+        "l64z3LtfbfhxTHAVY6rEkPb+R4l4hsrDXSOWCklX+BoSZ2XNuMKmq15IMebUKiNq\n"
+        "ib7QXP/lPkExd8Jtu2x3d0K6hwXDc34Gtqyn2hOMpqqxyLKyjRkQClcN8vkNx3ky\n"
+        "UllL87b/NWiVxeTM8XT8YgsaDiwd9qutnXgihy5U9zt+xVcowunVVgRQxxvKsGeI\n"
+        "r9rNqjd8mhsvBshsFob69G7GyAic1f1WzqPkJgOYRMzZU8lNsBY7TtDxangcz36x\n"
+        "r1A/hQwebB5vxG1bAfYxBhrtVM45FaRe4OP5tpLCrQdzO+UCAwEAATANBgkqhkiG\n"
+        "9w0BAQsFAAOCAQEAdZz+nIk3di5fH1GqVW3Xo6Gg237RvapusxRKC1QM/i4C9sUo\n"
+        "qOS3Bg+aAAJhzFAy6jUB8/YfBPuOXiAU5Wr9uC31EQtKgvcAxi1wHMEeyhNgPFOP\n"
+        "evs7U18h/7iDGr+HGKV8TbYi5SBoE6tynD3BoJk8gHi4ewdCRyex6lQjwwvz4ele\n"
+        "dpaQzZuVNMGjwA+CHaUJG8E65QYy9FTrXfPb+qQVi4LEvd5QAIiz4/hLNtBA9sR7\n"
+        "lu5MKTmbsWq2aDtynlOfZAaWWwsWYXgv4nPCZOu2kTQ/S5ZkTEXJwIO1TteUVl1s\n"
+        "f4Pl8vbKm9EBJKNGZJgUyE6AkfRlOHVGChlLzg==\n"
         "-----END CERTIFICATE-----"
     )

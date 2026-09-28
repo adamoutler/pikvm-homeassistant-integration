@@ -12,7 +12,7 @@ from homeassistant.helpers import device_registry as dr, entity_registry as er
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.typing import ConfigType
 
-from .cert_handler import format_url
+from pikvm_aio import format_url
 from .const import (
     CONF_CERTIFICATE,
     CONF_HOST,
@@ -72,6 +72,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         entry.data[CONF_PASSWORD],
         entry.data.get(CONF_TOTP, ""),
         entry.data[CONF_CERTIFICATE],
+        entry=entry,
     )
     
     await coordinator.async_setup()

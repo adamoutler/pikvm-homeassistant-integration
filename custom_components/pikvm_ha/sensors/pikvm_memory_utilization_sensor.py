@@ -44,13 +44,13 @@ class PiKVMMemoryUtilizationSensor(PiKVMBaseSensor):
     def state(self):
         """Return the state of the sensor in preferred units."""
         return get_nested_value(
-            self.coordinator.data, ["hw", "health", "mem", "percent"]
+            self.coordinator.data, ["hw", "performance", "memory", "utilization"]
         )
 
     @property
     def available(self):
         """Return True if the sensor data is available."""
-        return "mem" in get_nested_value(self.coordinator.data, ["hw", "health"], {})
+        return "performance" in get_nested_value(self.coordinator.data, ["hw"], {})
 
     @property
     def unit_of_measurement(self):
@@ -62,11 +62,13 @@ class PiKVMMemoryUtilizationSensor(PiKVMBaseSensor):
         """Return the state attributes."""
         attributes = super().extra_state_attributes
         available_bytes = get_nested_value(
-            self.coordinator.data, ["hw", "health", "mem", "available"]
+            self.coordinator.data, ["hw", "performance", "memory", "available"]
         )
         total_bytes = get_nested_value(
-            self.coordinator.data, ["hw", "health", "mem", "total"]
+            self.coordinator.data, ["hw", "performance", "memory", "total"]
         )
-        attributes["available MB"] = bytes_to_mb(available_bytes)
-        attributes["total MB"] = bytes_to_mb(total_bytes)
+        if available_bytes is not None:
+            attributes["available MB"] = bytes_to_mb(available_bytes)
+        if total_bytes is not None:
+            attributes["total MB"] = bytes_to_mb(total_bytes)
         return attributes

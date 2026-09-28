@@ -36,13 +36,13 @@ class PiKVMCpuUtilizationSensor(PiKVMBaseSensor):
     def state(self):
         """Return the state of the sensor in preferred units."""
         return get_nested_value(
-            self.coordinator.data, ["hw", "health", "cpu", "percent"]
+            self.coordinator.data, ["hw", "performance", "cpu", "utilization"]
         )
 
     @property
     def available(self):
         """Return True if the sensor data is available."""
-        return "cpu" in get_nested_value(self.coordinator.data, ["hw", "health"], {})
+        return "performance" in get_nested_value(self.coordinator.data, ["hw"], {})
 
     @property
     def unit_of_measurement(self):

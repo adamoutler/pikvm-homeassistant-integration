@@ -1,16 +1,26 @@
 """Config flow to configure PiKVM."""
 
-import logging, pyotp
+from __future__ import annotations
+
+import logging
+from typing import Any
+
+import pyotp
 
 from homeassistant import config_entries
 
-from .cert_handler import fetch_serialized_cert, is_pikvm_device
+from .cert_handler import (
+    PiKVMResponse,
+    fetch_serialized_cert,
+    format_url,
+    is_pikvm_device,
+)
 from .const import (
     CONF_CERTIFICATE,
     CONF_HOST,
     CONF_PASSWORD,
-    CONF_USERNAME,
     CONF_TOTP,
+    CONF_USERNAME,
     DEFAULT_PASSWORD,
     DEFAULT_USERNAME,
     DOMAIN,
@@ -18,7 +28,6 @@ from .const import (
 )
 from .utils import (
     create_data_schema,
-    format_url,
     get_translations,
     update_existing_entry,
 )
@@ -29,14 +38,14 @@ _LOGGER = logging.getLogger(__name__)
 class PiKVMOptionsFlowHandler(config_entries.OptionsFlow):
     """Handle PiKVM options."""
 
-    def __init__(self, config_entry) -> None:
+    def __init__(self, config_entry: config_entries.ConfigEntry) -> None:
         """Initialize options flow."""
         self.config_entry = config_entry
         self.translate = None
 
-    async def async_step_init(self, user_input=None):
+    async def async_step_init(self, user_input: dict[str, Any] | None = None) -> config_entries.ConfigFlowResult:
         """Manage the PiKVM options."""
-        errors = {}
+        errors: dict[str, str] = {}
         self.translate = await get_translations(
             self.hass, self.hass.config.language, DOMAIN
         )
@@ -48,8 +57,7 @@ class PiKVMOptionsFlowHandler(config_entries.OptionsFlow):
             username = user_input.get(CONF_USERNAME, DEFAULT_USERNAME)
             password = user_input.get(CONF_PASSWORD, DEFAULT_PASSWORD)
             totp_secret = user_input.get(CONF_TOTP, "")
-            
-            # Generate 2FA code from TOTP secret
+
             if len(totp_secret) > 0:
                 totp_code = pyotp.TOTP(totp_secret).now()
             else:
@@ -118,37 +126,34 @@ class PiKVMOptionsFlowHandler(config_entries.OptionsFlow):
             }
         )
 
+        def _tr(key: str, default: str) -> str:
+            if callable(self.translate):
+                return self.translate(key, default)
+            return default
+
         return self.async_show_form(
             step_id="init",
             data_schema=data_schema,
             errors=errors,
             description_placeholders={
-                "url": self.translate(
-                    "step.user.data.url", "URL or IP address of the PiKVM device"
-                ),
-                "username": self.translate(
-                    "step.user.data.username", "Username for PiKVM"
-                ),
-                "password": self.translate(
-                    "step.user.data.password", "Password for PiKVM"
-                ),
-                "totp": self.translate(
-                    "step.user.data.totp", "2FA secret for PiKVM (if enabled)"
-                )
+                "url": _tr("step.user.data.url", "URL or IP address of the PiKVM device"),
+                "username": _tr("step.user.data.username", "Username for PiKVM"),
+                "password": _tr("step.user.data.password", "Password for PiKVM"),
+                "totp": _tr("step.user.data.totp", "2FA secret for PiKVM (if enabled)"),
             },
         )
 
 
-async def handle_user_input(self, user_input):
-    """Handle user input for the configuration."""
-    errors = {}
+async def handle_user_input(flow: Any, user_input: dict[str, Any]) -> tuple[Any, dict[str, str] | None]:
+    """Handle user input for the options configuration."""
+    errors: dict[str, str] = {}
     url = format_url(user_input[CONF_HOST])
     user_input[CONF_HOST] = url
 
     username = user_input.get(CONF_USERNAME, DEFAULT_USERNAME)
     password = user_input.get(CONF_PASSWORD, DEFAULT_PASSWORD)
     totp_secret = user_input.get(CONF_TOTP, "")
-    
+
     if len(totp_secret) > 0:
         totp_code = pyotp.TOTP(totp_secret).now()
     else:
@@ -156,7 +161,7 @@ async def handle_user_input(self, user_input):
 
     _LOGGER.debug("Manual setup with URL %s, username %s", url, username)
 
-    serialized_cert = await fetch_serialized_cert(self.hass, url)
+    serialized_cert = await fetch_serialized_cert(flow.hass, url)
     if not serialized_cert:
         errors["base"] = "cannot_fetch_cert"
         return None, errors
@@ -165,7 +170,7 @@ async def handle_user_input(self, user_input):
     user_input[CONF_CERTIFICATE] = serialized_cert
 
     response = await is_pikvm_device(
-        self.hass, url, username, password + totp_code, serialized_cert
+        flow.hass, url, username, password + totp_code, serialized_cert
     )
     if response.name is None or response.name == "localhost.localdomain":
         name = DOMAIN
@@ -179,23 +184,24 @@ async def handle_user_input(self, user_input):
         )
 
         existing_entry = None
-        for entry in self.hass.config_entries.async_entries(DOMAIN):
+        for entry in flow.hass.config_entries.async_entries(DOMAIN):
             if entry.unique_id == response.serial:
                 existing_entry = entry
                 break
 
         if existing_entry:
-            update_existing_entry(self.hass, existing_entry, user_input)
-            return self.async_create_entry(title="", data={})
+            update_existing_entry(flow.hass, existing_entry, user_input)
+            return flow.async_create_entry(title="", data={}), None
 
         user_input["serial"] = response.serial
-        await self.async_set_unique_id(response.serial)
-        self._abort_if_unique_id_configured()
-        config_flow_result = self.async_create_entry(
+        await flow.async_set_unique_id(response.serial)
+        flow._abort_if_unique_id_configured()
+        config_flow_result = flow.async_create_entry(
             title=response.name if response.name else MANUFACTURER, data=user_input
         )
 
         return config_flow_result, None
+
     _LOGGER.error("Cannot connect to PiKVM device at %s", url)
     errors["base"] = "cannot_connect"
     return None, errors

@@ -26,4 +26,4 @@ class PiKVMSDEnabledSensor(PiKVMBaseSensor):
     @property
     def state(self) -> bool:
         """Return the state of the sensor."""
-        return get_nested_value(self.coordinator.data, ["msd", "enabled"], False)
+        return get_nested_value(self.coordinator.data, ["msd", "is_enabled"], False)

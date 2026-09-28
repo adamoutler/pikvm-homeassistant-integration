@@ -27,6 +27,16 @@ from custom_components.pikvm_ha.options_flow import (
 )
 
 
+@pytest.fixture(autouse=True)
+def bypass_setup_entry():
+    """Bypass entry setup during options flow tests."""
+    with patch(
+        "custom_components.pikvm_ha.async_setup_entry",
+        return_value=True,
+    ):
+        yield
+
+
 @pytest.mark.asyncio
 async def test_options_flow_updates_entry(hass):
     """Ensure that options flow updates credentials and certificate."""

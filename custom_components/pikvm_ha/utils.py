@@ -9,6 +9,7 @@ from homeassistant.helpers.translation import async_get_translations
 
 from .const import (
     CONF_HOST,
+    CONF_NAME,
     CONF_PASSWORD,
     CONF_USERNAME,
     CONF_TOTP,
@@ -18,6 +19,7 @@ from .const import (
 )
 
 _LOGGER = logging.getLogger(__name__)
+_SENTINEL = object()
 
 
 def format_url(input_url):
@@ -38,7 +40,7 @@ def create_data_schema(user_input):
             vol.Required(
                 CONF_PASSWORD, default=user_input.get(CONF_PASSWORD, DEFAULT_PASSWORD)
             ): str,
-            vol.Optional(CONF_TOTP, default=user_input.get(CONF_TOTP, "")): str
+            vol.Optional(CONF_TOTP, default=user_input.get(CONF_TOTP, "")): str,
         }
     )
 
@@ -88,9 +90,9 @@ def get_unique_id_base(config_entry, coordinator):
 
 
 def get_nested_value(data, keys, default=None):
-    """Safely get a nested value from a dictionary.
+    """Safely get a nested value from a dictionary or mapping.
 
-    :param data: The dictionary to search.
+    :param data: The dictionary/mapping to search.
     :param keys: A list of keys to traverse the dictionary.
     :param default: The default value to return if the keys are not found.
     :return: The value found or the default value.
@@ -98,11 +100,16 @@ def get_nested_value(data, keys, default=None):
     if data is None:
         return default
     for key in keys:
-        if isinstance(data, dict):
-            data = data.get(key, {})
+        if isinstance(data, dict) or hasattr(data, "get"):
+            try:
+                data = data.get(key, _SENTINEL)
+                if data is _SENTINEL:
+                    return default
+            except Exception:
+                return default
         else:
             return default
-    return data if data != {} else default
+    return data
 
 
 def bytes_to_mb(bytes_value):

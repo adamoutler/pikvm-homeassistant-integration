@@ -37,7 +37,7 @@ class PiKVMExtraSensor(PiKVMBaseSensor):
         extra_data = get_nested_value(
             self.coordinator.data, ["extras", self._extra_name], {}
         )
-        return extra_data.get("enabled", False)
+        return extra_data.get("is_running", False)
 
     @property
     def extra_state_attributes(self):

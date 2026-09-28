@@ -1,8 +1,9 @@
 """PiKVM entity base class."""
 
+from __future__ import annotations
+
 import logging
 
-from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .coordinator import PiKVMDataUpdateCoordinator
@@ -10,10 +11,10 @@ from .coordinator import PiKVMDataUpdateCoordinator
 _LOGGER = logging.getLogger(__name__)
 
 
-class PiKVMEntity(CoordinatorEntity):
+class PiKVMEntity(CoordinatorEntity[PiKVMDataUpdateCoordinator]):
     """Base class for a PiKVM entity."""
 
-    coordinator: PiKVMDataUpdateCoordinator
+    _attr_has_entity_name = True
 
     def __init__(
         self, coordinator: PiKVMDataUpdateCoordinator, unique_id_base: str

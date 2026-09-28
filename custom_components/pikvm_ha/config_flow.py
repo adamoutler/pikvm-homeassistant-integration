@@ -1,25 +1,33 @@
 """Config flow for PiKVM integration."""
 
+import binascii
 import logging
 import re
+
 import pyotp
-import binascii
 
 from homeassistant import config_entries
+from homeassistant.core import callback
+from homeassistant.helpers.aiohttp_client import async_get_clientsession
+
 try:
     from homeassistant.helpers.service_info.zeroconf import ZeroconfServiceInfo
 except ImportError:
     from homeassistant.components.zeroconf import ZeroconfServiceInfo
-from homeassistant.core import callback
 
-from .cert_handler import fetch_serialized_cert, is_pikvm_device
+from .cert_handler import (
+    PiKVMResponse,
+    fetch_serialized_cert,
+    format_url,
+    is_pikvm_device,
+)
 from .const import (
     CONF_CERTIFICATE,
     CONF_HOST,
     CONF_MODEL,
     CONF_PASSWORD,
-    CONF_TOTP,
     CONF_SERIAL,
+    CONF_TOTP,
     CONF_USERNAME,
     DEFAULT_PASSWORD,
     DEFAULT_USERNAME,
@@ -51,16 +59,15 @@ async def perform_device_setup(flow_handler, user_input):
 
     try:
         if len(totp_secret) > 0:
-            # Generate 2FA code from provided TOTP secret
             try:
                 totp_code = pyotp.TOTP(totp_secret).now()
-            except binascii.Error:
+            except (binascii.Error, ValueError):
                 _LOGGER.debug("Invalid base32 string for TOTP secret")
                 errors["base"] = "invalid_totp"
                 return None, errors
         else:
             totp_code = ""
-        
+
         # Fetch the certificate
         serialized_cert = await fetch_serialized_cert(flow_handler.hass, host)
         if not serialized_cert:
@@ -70,8 +77,6 @@ async def perform_device_setup(flow_handler, user_input):
         # Store the certificate
         user_input[CONF_CERTIFICATE] = serialized_cert
 
-        # Connect and obtain unique data from the device.
-        # When using 2FA we need to append the code after the password.
         response = await is_pikvm_device(
             flow_handler.hass, host, username, password + totp_code, serialized_cert
         )
@@ -85,7 +90,6 @@ async def perform_device_setup(flow_handler, user_input):
                 "Error detected while connecting to PiKVM device. Error: %s",
                 response.error,
             )
-            # Handle the error based on response.name_or_error
             errors["base"] = "cannot_connect"
             return None, errors
 
@@ -118,9 +122,9 @@ async def perform_device_setup(flow_handler, user_input):
         config_flow_result = flow_handler.async_create_entry(
             title=device_name if device_name else "PiKVM", data=user_input
         )
-        return config_flow_result, None  # noqa: TRY300
+        return config_flow_result, None
 
-    except (ConnectionError, TimeoutError, ValueError) as e:
+    except Exception as e:
         _LOGGER.error("Unexpected error during device setup: %s", e)
         errors["base"] = "unknown_error"
 
