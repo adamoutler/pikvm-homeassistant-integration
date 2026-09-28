@@ -81,8 +81,25 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     hass.data[DOMAIN][entry.entry_id] = coordinator
 
     # Retrieve hardware and system information safely
-    platform = get_nested_value(coordinator.data, ["hw", "platform"], {})
-    kvmd = get_nested_value(coordinator.data, ["system", "kvmd"], {})
+    raw_data = getattr(coordinator.data, "raw", None)
+    if raw_data is None:
+        raw_data = coordinator.data if isinstance(coordinator.data, dict) else {}
+
+    platform = get_nested_value(raw_data, ["hw", "platform"], {})
+    kvmd = get_nested_value(raw_data, ["system", "kvmd"], {})
+
+    hw_info = getattr(coordinator.data, "hw", None)
+    platform_info = getattr(hw_info, "platform", None)
+
+    model = (
+        getattr(platform_info, "model", None)
+        or getattr(platform_info, "type", None)
+        or platform.get("model")
+        or platform.get("type")
+        or getattr(coordinator.data, "model", None)
+    )
+    hw_version = getattr(platform_info, "base", None) or platform.get("base")
+    sw_version = getattr(coordinator.data, "kvmd_version", None) or kvmd.get("version")
 
     coordinator.device_info = DeviceInfo(
         identifiers={(DOMAIN, entry.data[CONF_SERIAL])},
@@ -90,9 +107,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         serial_number=entry.data[CONF_SERIAL],
         manufacturer=MANUFACTURER,
         name=entry.title,
-        model=platform.get("model") or platform.get("type"),
-        hw_version=platform.get("base"),
-        sw_version=kvmd.get("version"),
+        model=model,
+        hw_version=hw_version,
+        sw_version=sw_version,
     )
 
     # Forward the setup to the sensor platform

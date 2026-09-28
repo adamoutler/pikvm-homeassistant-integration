@@ -2,6 +2,7 @@
 
 from unittest.mock import AsyncMock, patch
 import pytest
+from homeassistant.config_entries import ConfigEntryState
 from homeassistant.helpers import device_registry as dr, entity_registry as er
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
@@ -68,6 +69,7 @@ async def test_async_setup_entry_success(hass, pikvm_cert, mock_device_info):
         },
     )
     entry.add_to_hass(hass)
+    entry.mock_state(hass, ConfigEntryState.SETUP_IN_PROGRESS)
 
     with patch(
         "custom_components.pikvm_ha.coordinator.PiKVMClient.get_info",
@@ -111,6 +113,7 @@ async def test_async_setup_entry_unique_id_migration(hass, pikvm_cert, mock_devi
         },
     )
     entry.add_to_hass(hass)
+    entry.mock_state(hass, ConfigEntryState.SETUP_IN_PROGRESS)
 
     with patch(
         "custom_components.pikvm_ha.coordinator.PiKVMClient.get_info",
