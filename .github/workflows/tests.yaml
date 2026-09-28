@@ -1,0 +1,32 @@
+name: Tests
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.12"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: "pip"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install --extra-index-url https://git.adamoutler.com/api/packages/aoutler/pypi/simple/ "pikvm-aio>=0.1.0"
+          pip install -r requirements_test.txt
+
+      - name: Run tests with pytest
+        run: |
+          pytest --cov=custom_components.pikvm_ha --cov-report=term-missing --cov-fail-under=80
