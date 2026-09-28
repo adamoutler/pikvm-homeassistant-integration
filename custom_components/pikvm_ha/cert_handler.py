@@ -14,12 +14,15 @@ from pikvm_aio import (
     PiKVMConnectionError,
     PiKVMDeviceError,
     PiKVMTimeoutError,
-    async_fetch_peer_certificate,
+    fetch_remote_cert,
     format_url,
     parse_host_port,
 )
 
 _LOGGER = logging.getLogger(__name__)
+
+# Backwards compatibility alias
+async_fetch_peer_certificate = fetch_remote_cert
 
 PiKVMResponse = namedtuple(
     "PiKVMResponse", ["success", "model", "serial", "name", "error"]
@@ -29,8 +32,7 @@ PiKVMResponse = namedtuple(
 async def fetch_serialized_cert(hass: HomeAssistant | None, url: str) -> str | None:
     """Fetch and serialize certificate using pikvm-aio."""
     try:
-        h, p = parse_host_port(url)
-        return await async_fetch_peer_certificate(h, p, timeout=5.0)
+        return await fetch_remote_cert(url, timeout=5.0)
     except Exception as e:
         _LOGGER.debug("Could not fetch certificate from %s: %s", url, e)
         return None

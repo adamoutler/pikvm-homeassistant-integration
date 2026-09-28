@@ -21,37 +21,19 @@ from custom_components.pikvm_ha.cert_handler import (
 async def test_fetch_serialized_cert_success(hass, pikvm_cert):
     """Test successfully fetching and serializing certificate."""
     with patch(
-        "custom_components.pikvm_ha.cert_handler.parse_host_port",
-        return_value=("pikvm.local", 443),
-    ) as mock_parse, patch(
-        "custom_components.pikvm_ha.cert_handler.async_fetch_peer_certificate",
+        "custom_components.pikvm_ha.cert_handler.fetch_remote_cert",
         new=AsyncMock(return_value=pikvm_cert),
     ) as mock_fetch:
         result = await fetch_serialized_cert(hass, "https://pikvm.local")
         assert result == pikvm_cert
-        mock_parse.assert_called_once_with("https://pikvm.local")
-        mock_fetch.assert_awaited_once_with("pikvm.local", 443, timeout=5.0)
-
-
-@pytest.mark.asyncio
-async def test_fetch_serialized_cert_parse_failure(hass):
-    """Test certificate fetch fails on invalid URL format."""
-    with patch(
-        "custom_components.pikvm_ha.cert_handler.parse_host_port",
-        side_effect=ValueError("Invalid URL format"),
-    ):
-        result = await fetch_serialized_cert(hass, "invalid://host:bad_port")
-        assert result is None
+        mock_fetch.assert_awaited_once_with("https://pikvm.local", timeout=5.0)
 
 
 @pytest.mark.asyncio
 async def test_fetch_serialized_cert_network_failure(hass):
     """Test certificate fetch fails gracefully on network timeout or error."""
     with patch(
-        "custom_components.pikvm_ha.cert_handler.parse_host_port",
-        return_value=("pikvm.local", 443),
-    ), patch(
-        "custom_components.pikvm_ha.cert_handler.async_fetch_peer_certificate",
+        "custom_components.pikvm_ha.cert_handler.fetch_remote_cert",
         new=AsyncMock(side_effect=TimeoutError("Timed out")),
     ):
         result = await fetch_serialized_cert(hass, "https://pikvm.local")
