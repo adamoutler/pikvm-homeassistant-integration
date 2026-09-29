@@ -284,7 +284,8 @@ async def test_async_setup_entry_migrates_legacy_device_name(hass, pikvm_cert, m
             await async_setup_entry(hass, entry)
 
     # Pre-emptive migration should have renamed the device in dev_reg before the refresh failed
-    migrated_device = dev_reg.async_get_device(identifiers={(DOMAIN, "sn_offline_105")})
-    assert migrated_device.name == "PiKVM (192.168.1.105)"
+    devices = dr.async_entries_for_config_entry(dev_reg, entry.entry_id)
+    assert len(devices) == 1
+    assert devices[0].name == "PiKVM (192.168.1.105)"
 
 

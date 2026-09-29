@@ -155,10 +155,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         sw_version=sw_version,
     )
 
-    # Ensure device registry entry is in sync with latest device_name
-    existing_dev = dev_reg.async_get_device(identifiers={(DOMAIN, effective_serial)})
-    if existing_dev and existing_dev.name_by_user is None and existing_dev.name != device_name:
-        dev_reg.async_update_device(existing_dev.id, name=device_name)
+    # Ensure device registry entry is in sync with latest device_name without deprecated async_get_device
+    for dev in dr.async_entries_for_config_entry(dev_reg, entry.entry_id):
+        if dev.name_by_user is None and dev.name != device_name:
+            dev_reg.async_update_device(dev.id, name=device_name)
 
     # Forward the setup to the sensor platform
     await hass.config_entries.async_forward_entry_setups(entry, ["sensor"])
