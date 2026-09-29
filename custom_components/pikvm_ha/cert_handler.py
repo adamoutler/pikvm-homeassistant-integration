@@ -49,6 +49,8 @@ async def is_pikvm_device(
         password=password,
         session=session,
         ssl_cert=cert,
+        verify_ssl=False,
+        check_hostname=False,
         timeout=5.0,
     )
     try:

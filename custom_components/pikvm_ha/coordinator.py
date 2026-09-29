@@ -67,6 +67,8 @@ class PiKVMDataUpdateCoordinator(DataUpdateCoordinator[PiKVMDeviceInfo]):
             totp_secret=self.totp if self.totp else None,
             session=async_get_clientsession(hass),
             ssl_cert=self.cert if self.cert else None,
+            verify_ssl=False,
+            check_hostname=False,
         )
 
     async def async_setup(self) -> None:
