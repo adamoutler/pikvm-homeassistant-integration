@@ -1,10 +1,13 @@
 """Config flow for PiKVM integration."""
 
 import binascii
+from collections.abc import Mapping
 import logging
 import re
+from typing import Any
 
 import pyotp
+import voluptuous as vol
 
 from homeassistant import config_entries
 from homeassistant.core import callback
@@ -15,6 +18,7 @@ try:
 except ImportError:
     from homeassistant.components.zeroconf import ZeroconfServiceInfo
 
+from pikvm_aio import parse_host_port
 from .cert_handler import (
     PiKVMResponse,
     fetch_serialized_cert,
@@ -110,9 +114,16 @@ async def perform_device_setup(flow_handler, user_input):
             )
             return flow_handler.async_abort(reason="already_configured"), None
 
+        try:
+            clean_host = parse_host_port(host)[0]
+        except Exception:
+            clean_host = host
+
         device_name = response.name
         if device_name == "localhost.localdomain":
             device_name = MANUFACTURER
+
+        entry_title = device_name if device_name else MANUFACTURER
 
         user_input[CONF_MODEL] = response.model.lower()
         user_input[CONF_SERIAL] = response.serial
@@ -120,7 +131,7 @@ async def perform_device_setup(flow_handler, user_input):
 
         # Finish config
         config_flow_result = flow_handler.async_create_entry(
-            title=device_name if device_name else "PiKVM", data=user_input
+            title=entry_title, data=user_input
         )
         return config_flow_result, None
 
@@ -298,6 +309,87 @@ class PiKVMConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     "step.user.data.totp", "2FA secret for PiKVM (if enabled)"
                 ),
             },
+        )
+
+    def _get_reauth_entry(self) -> config_entries.ConfigEntry:
+        """Get the config entry being reauthenticated."""
+        if hasattr(super(), "_get_reauth_entry"):
+            return super()._get_reauth_entry()
+        entry_id = self.context.get("entry_id")
+        return self.hass.config_entries.async_get_entry(entry_id)
+
+    async def async_step_reauth(
+        self, entry_data: Mapping[str, Any]
+    ) -> config_entries.ConfigFlowResult:
+        """Handle initiation of re-authentication."""
+        return await self.async_step_reauth_confirm()
+
+    async def async_step_reauth_confirm(
+        self, user_input: dict[str, Any] | None = None
+    ) -> config_entries.ConfigFlowResult:
+        """Handle re-authentication credentials update."""
+        errors: dict[str, str] = {}
+        reauth_entry = self._get_reauth_entry()
+
+        if user_input is not None and reauth_entry is not None:
+            host = reauth_entry.data[CONF_HOST]
+            username = user_input.get(CONF_USERNAME, reauth_entry.data.get(CONF_USERNAME, DEFAULT_USERNAME))
+            password = user_input.get(CONF_PASSWORD, reauth_entry.data.get(CONF_PASSWORD, DEFAULT_PASSWORD))
+            totp_secret = user_input.get(CONF_TOTP, "").strip()
+            cert = reauth_entry.data.get(CONF_CERTIFICATE, "")
+
+            totp_code = ""
+            if totp_secret:
+                try:
+                    totp_code = pyotp.TOTP(totp_secret).now()
+                except (binascii.Error, ValueError):
+                    errors["base"] = "invalid_totp"
+
+            if not errors:
+                response = await is_pikvm_device(
+                    self.hass, host, username, password + totp_code, cert
+                )
+                if response.success:
+                    return self.async_update_reload_and_abort(
+                        reauth_entry,
+                        data={
+                            **reauth_entry.data,
+                            CONF_USERNAME: username,
+                            CONF_PASSWORD: password,
+                            CONF_TOTP: totp_secret,
+                        },
+                    )
+                if response.error == "Exception_HTTP403":
+                    errors["base"] = "Exception_HTTP403"
+                else:
+                    errors["base"] = "cannot_connect"
+
+        clean_host = ""
+        default_username = DEFAULT_USERNAME
+        default_password = DEFAULT_PASSWORD
+        default_totp = ""
+        if reauth_entry is not None:
+            default_username = reauth_entry.data.get(CONF_USERNAME, DEFAULT_USERNAME)
+            default_password = reauth_entry.data.get(CONF_PASSWORD, DEFAULT_PASSWORD)
+            default_totp = reauth_entry.data.get(CONF_TOTP, "")
+            try:
+                clean_host = parse_host_port(reauth_entry.data.get(CONF_HOST, ""))[0]
+            except Exception:
+                clean_host = reauth_entry.data.get(CONF_HOST, "")
+
+        reauth_schema = vol.Schema(
+            {
+                vol.Required(CONF_USERNAME, default=default_username): str,
+                vol.Required(CONF_PASSWORD, default=default_password): str,
+                vol.Optional(CONF_TOTP, default=default_totp): str,
+            }
+        )
+
+        return self.async_show_form(
+            step_id="reauth_confirm",
+            data_schema=reauth_schema,
+            errors=errors,
+            description_placeholders={"host": clean_host},
         )
 
     @staticmethod

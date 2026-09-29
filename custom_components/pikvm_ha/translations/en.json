@@ -8,10 +8,20 @@
           "password": "Password for PiKVM",
           "totp": "TOTP Generator Key (Not 6-Digit Code)"
         }
+      },
+      "reauth_confirm": {
+        "title": "Reauthenticate PiKVM",
+        "description": "Authentication failed for PiKVM at {host}. Please verify your credentials and TOTP 2FA secret.",
+        "data": {
+          "username": "Username for PiKVM",
+          "password": "Password for PiKVM",
+          "totp": "TOTP Generator Key (Not 6-Digit Code)"
+        }
       }
     },
     "abort": {
-      "already_configured": "The device is already configured in Home Assistant, and the information is now updated."
+      "already_configured": "The device is already configured in Home Assistant, and the information is now updated.",
+      "reauth_successful": "Re-authentication was successful."
     },
     "error": {
       "cannot_fetch_cert": "Cannot fetch certificate",

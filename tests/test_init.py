@@ -213,3 +213,35 @@ async def test_async_remove_entry(hass):
         await async_remove_entry(hass, entry)
         assert entry.entry_id not in hass.data[DOMAIN]
         mock_unload.assert_awaited_once_with(entry, "sensor")
+
+
+@pytest.mark.asyncio
+async def test_async_setup_entry_generic_title_disambiguation(hass, pikvm_cert, mock_device_info):
+    """Test generic PiKVM entry titles are disambiguated with host and device name."""
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        title="PiKVM",
+        unique_id="sn_12345",
+        data={
+            CONF_HOST: "https://192.168.1.108",
+            CONF_USERNAME: "admin",
+            CONF_PASSWORD: "secret_password",
+            CONF_SERIAL: "sn_12345",
+            CONF_CERTIFICATE: pikvm_cert,
+            CONF_TOTP: "",
+        },
+    )
+    entry.add_to_hass(hass)
+    entry.mock_state(hass, ConfigEntryState.SETUP_IN_PROGRESS)
+
+    with patch(
+        "custom_components.pikvm_ha.coordinator.PiKVMClient.get_info",
+        new=AsyncMock(return_value=mock_device_info),
+    ), patch.object(
+        hass.config_entries, "async_forward_entry_setups", new=AsyncMock(return_value=True)
+    ):
+        result = await async_setup_entry(hass, entry)
+        assert result is True
+        # Title updated with device name and clean host
+        assert entry.title == "pikvm.local (192.168.1.108)"
+

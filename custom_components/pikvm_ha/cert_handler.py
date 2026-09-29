@@ -21,6 +21,13 @@ from pikvm_aio import (
 
 _LOGGER = logging.getLogger(__name__)
 
+try:
+    from homeassistant.util.ssl import get_default_no_verify_context
+
+    _DEFAULT_NO_VERIFY_SSL_CONTEXT = get_default_no_verify_context()
+except Exception:  # noqa: BLE001
+    _DEFAULT_NO_VERIFY_SSL_CONTEXT = None
+
 # Backwards compatibility alias
 async_fetch_peer_certificate = fetch_remote_cert
 
@@ -52,6 +59,7 @@ async def is_pikvm_device(
         verify_ssl=False,
         check_hostname=False,
         timeout=5.0,
+        ssl_context=_DEFAULT_NO_VERIFY_SSL_CONTEXT,
     )
     try:
         device = await client.get_info()

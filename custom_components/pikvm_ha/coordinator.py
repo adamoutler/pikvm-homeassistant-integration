@@ -26,6 +26,13 @@ from .const import DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
 
+try:
+    from homeassistant.util.ssl import get_default_no_verify_context
+
+    _DEFAULT_NO_VERIFY_SSL_CONTEXT = get_default_no_verify_context()
+except Exception:  # noqa: BLE001
+    _DEFAULT_NO_VERIFY_SSL_CONTEXT = None
+
 
 class PiKVMDataUpdateCoordinator(DataUpdateCoordinator[PiKVMDeviceInfo]):
     """Class to manage fetching data from the PiKVM API asynchronously."""
@@ -69,6 +76,7 @@ class PiKVMDataUpdateCoordinator(DataUpdateCoordinator[PiKVMDeviceInfo]):
             ssl_cert=self.cert if self.cert else None,
             verify_ssl=False,
             check_hostname=False,
+            ssl_context=_DEFAULT_NO_VERIFY_SSL_CONTEXT,
         )
 
     async def async_setup(self) -> None:

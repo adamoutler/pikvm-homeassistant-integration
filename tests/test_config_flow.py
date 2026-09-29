@@ -18,6 +18,7 @@ from custom_components.pikvm_ha.const import (
     CONF_MODEL,
     CONF_PASSWORD,
     CONF_SERIAL,
+    CONF_TOTP,
     CONF_USERNAME,
     DEFAULT_PASSWORD,
     DEFAULT_USERNAME,
@@ -588,3 +589,188 @@ async def test_async_step_user_discovery_password_cleared(hass):
 
     assert result["type"] == FlowResultType.FORM
     assert flow._discovery_info[CONF_PASSWORD] == ""
+
+
+@pytest.mark.asyncio
+async def test_reauth_flow_success(hass, pikvm_cert):
+    """Test successful re-authentication updating credentials and TOTP."""
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        title="PiKVM Lab",
+        unique_id="sn_reauth_123",
+        data={
+            CONF_HOST: "https://192.168.1.2",
+            CONF_USERNAME: "admin",
+            CONF_PASSWORD: "old_password",
+            CONF_SERIAL: "sn_reauth_123",
+            CONF_CERTIFICATE: pikvm_cert,
+            CONF_TOTP: "",
+        },
+    )
+    entry.add_to_hass(hass)
+
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN,
+        context={
+            "source": config_entries.SOURCE_REAUTH,
+            "entry_id": entry.entry_id,
+            "unique_id": entry.unique_id,
+        },
+        data=entry.data,
+    )
+
+    assert result["type"] == FlowResultType.FORM
+    assert result["step_id"] == "reauth_confirm"
+
+    success_resp = PiKVMResponse(True, "v3", "sn_reauth_123", "pikvm-pfsense", None)
+
+    with patch(
+        "custom_components.pikvm_ha.config_flow.is_pikvm_device",
+        new=AsyncMock(return_value=success_resp),
+    ):
+        result2 = await hass.config_entries.flow.async_configure(
+            result["flow_id"],
+            user_input={
+                CONF_USERNAME: "admin",
+                CONF_PASSWORD: "new_password",
+                CONF_TOTP: "JBSWY3DPEHPK3PXP",
+            },
+        )
+
+    assert result2["type"] == FlowResultType.ABORT
+    assert result2["reason"] == "reauth_successful"
+    assert entry.data[CONF_PASSWORD] == "new_password"
+    assert entry.data[CONF_TOTP] == "JBSWY3DPEHPK3PXP"
+
+
+@pytest.mark.asyncio
+async def test_reauth_flow_invalid_totp(hass, pikvm_cert):
+    """Test re-authentication with invalid base32 TOTP secret."""
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        title="PiKVM Lab",
+        unique_id="sn_reauth_invalid_totp",
+        data={
+            CONF_HOST: "https://192.168.1.2",
+            CONF_USERNAME: "admin",
+            CONF_PASSWORD: "password",
+            CONF_SERIAL: "sn_reauth_invalid_totp",
+            CONF_CERTIFICATE: pikvm_cert,
+            CONF_TOTP: "",
+        },
+    )
+    entry.add_to_hass(hass)
+
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN,
+        context={
+            "source": config_entries.SOURCE_REAUTH,
+            "entry_id": entry.entry_id,
+        },
+        data=entry.data,
+    )
+
+    result2 = await hass.config_entries.flow.async_configure(
+        result["flow_id"],
+        user_input={
+            CONF_USERNAME: "admin",
+            CONF_PASSWORD: "password",
+            CONF_TOTP: "INVALID_BASE32_!@#$",
+        },
+    )
+
+    assert result2["type"] == FlowResultType.FORM
+    assert result2["errors"]["base"] == "invalid_totp"
+
+
+@pytest.mark.asyncio
+async def test_reauth_flow_auth_failure(hass, pikvm_cert):
+    """Test re-authentication with invalid credentials (HTTP 403)."""
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        title="PiKVM Lab",
+        unique_id="sn_reauth_fail",
+        data={
+            CONF_HOST: "https://192.168.1.2",
+            CONF_USERNAME: "admin",
+            CONF_PASSWORD: "wrong_password",
+            CONF_SERIAL: "sn_reauth_fail",
+            CONF_CERTIFICATE: pikvm_cert,
+            CONF_TOTP: "",
+        },
+    )
+    entry.add_to_hass(hass)
+
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN,
+        context={
+            "source": config_entries.SOURCE_REAUTH,
+            "entry_id": entry.entry_id,
+        },
+        data=entry.data,
+    )
+
+    fail_resp = PiKVMResponse(False, None, None, None, "Exception_HTTP403")
+
+    with patch(
+        "custom_components.pikvm_ha.config_flow.is_pikvm_device",
+        new=AsyncMock(return_value=fail_resp),
+    ):
+        result2 = await hass.config_entries.flow.async_configure(
+            result["flow_id"],
+            user_input={
+                CONF_USERNAME: "admin",
+                CONF_PASSWORD: "bad_password",
+                CONF_TOTP: "",
+            },
+        )
+
+    assert result2["type"] == FlowResultType.FORM
+    assert result2["errors"]["base"] == "Exception_HTTP403"
+
+
+@pytest.mark.asyncio
+async def test_reauth_flow_cannot_connect(hass, pikvm_cert):
+    """Test re-authentication when host is unreachable."""
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        title="PiKVM Lab",
+        unique_id="sn_reauth_unreach",
+        data={
+            CONF_HOST: "https://192.168.1.2",
+            CONF_USERNAME: "admin",
+            CONF_PASSWORD: "password",
+            CONF_SERIAL: "sn_reauth_unreach",
+            CONF_CERTIFICATE: pikvm_cert,
+            CONF_TOTP: "",
+        },
+    )
+    entry.add_to_hass(hass)
+
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN,
+        context={
+            "source": config_entries.SOURCE_REAUTH,
+            "entry_id": entry.entry_id,
+        },
+        data=entry.data,
+    )
+
+    fail_resp = PiKVMResponse(False, None, None, None, "cannot_connect")
+
+    with patch(
+        "custom_components.pikvm_ha.config_flow.is_pikvm_device",
+        new=AsyncMock(return_value=fail_resp),
+    ):
+        result2 = await hass.config_entries.flow.async_configure(
+            result["flow_id"],
+            user_input={
+                CONF_USERNAME: "admin",
+                CONF_PASSWORD: "password",
+                CONF_TOTP: "",
+            },
+        )
+
+    assert result2["type"] == FlowResultType.FORM
+    assert result2["errors"]["base"] == "cannot_connect"
+

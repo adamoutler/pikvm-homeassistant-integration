@@ -12,7 +12,7 @@ from homeassistant.helpers import device_registry as dr, entity_registry as er
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.typing import ConfigType
 
-from pikvm_aio import format_url
+from pikvm_aio import format_url, parse_host_port
 from .const import (
     CONF_CERTIFICATE,
     CONF_HOST,
@@ -56,7 +56,18 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up PiKVM from a config entry."""
     hass.data.setdefault(DOMAIN, {})
 
-    # Retrieve the unique ID and serial number from the config entry
+    # Clean host for title disambiguation
+    raw_host = entry.data.get(CONF_HOST, "")
+    try:
+        clean_host = parse_host_port(raw_host)[0]
+    except Exception:
+        clean_host = raw_host or "unknown"
+
+    # Pre-emptively disambiguate generic entry titles before network I/O
+    if entry.title in ("PiKVM", "pikvm", "localhost.localdomain", "", None):
+        hass.config_entries.async_update_entry(entry, title=f"PiKVM ({clean_host})")
+
+    # Retrieve the unique ID and serial number safely from the config entry
     stored_serial = entry.data.get(CONF_SERIAL)
     unique_id = entry.unique_id
 
@@ -67,11 +78,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     coordinator = PiKVMDataUpdateCoordinator(
         hass,
-        entry.data[CONF_HOST],
-        entry.data[CONF_USERNAME],
-        entry.data[CONF_PASSWORD],
+        raw_host,
+        entry.data.get(CONF_USERNAME, DEFAULT_USERNAME),
+        entry.data.get(CONF_PASSWORD, DEFAULT_PASSWORD),
         entry.data.get(CONF_TOTP, ""),
-        entry.data[CONF_CERTIFICATE],
+        entry.data.get(CONF_CERTIFICATE, ""),
         entry=entry,
     )
     
@@ -101,10 +112,18 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     hw_version = getattr(platform_info, "base", None) or platform.get("base")
     sw_version = getattr(coordinator.data, "kvmd_version", None) or kvmd.get("version")
 
+    # If the device reports a distinct server name, update the entry title
+    discovered_name = getattr(coordinator.data, "name", None)
+    if discovered_name and discovered_name not in ("PiKVM", "pikvm", "localhost", "localhost.localdomain"):
+        new_title = f"{discovered_name} ({clean_host})"
+        if entry.title != new_title and (entry.title.startswith("PiKVM (") or entry.title == "PiKVM"):
+            hass.config_entries.async_update_entry(entry, title=new_title)
+
+    effective_serial = stored_serial or entry.unique_id or "unknown"
     coordinator.device_info = DeviceInfo(
-        identifiers={(DOMAIN, entry.data[CONF_SERIAL])},
-        configuration_url=format_url(entry.data[CONF_HOST]),
-        serial_number=entry.data[CONF_SERIAL],
+        identifiers={(DOMAIN, effective_serial)},
+        configuration_url=format_url(raw_host),
+        serial_number=effective_serial,
         manufacturer=MANUFACTURER,
         name=entry.title,
         model=model,
