@@ -75,7 +75,7 @@ async def test_coordinator_authentication_error(hass):
 
     with pytest.raises(ConfigEntryAuthFailed) as exc_info:
         await coordinator._async_update_data()
-    assert "Authentication failed" in str(exc_info.value)
+    assert "Invalid credentials or 2FA TOTP token required" in str(exc_info.value)
 
     # Calling refresh should record failure
     await coordinator.async_refresh()
@@ -84,16 +84,16 @@ async def test_coordinator_authentication_error(hass):
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    "error_class,error_message",
+    "error_class,error_message,expected_fragment",
     [
-        (PiKVMConnectionError, "Connection refused"),
-        (PiKVMTimeoutError, "Request timed out"),
-        (PiKVMDeviceError, "Internal error in KVMD"),
-        (PiKVMError, "General error"),
+        (PiKVMConnectionError, "Connection refused", "Cannot connect to pikvm.local"),
+        (PiKVMTimeoutError, "Request timed out", "Connection timed out reaching pikvm.local"),
+        (PiKVMDeviceError, "Internal error in KVMD", "Error communicating with PiKVM at pikvm.local"),
+        (PiKVMError, "General error", "Error communicating with PiKVM at pikvm.local"),
     ],
 )
-async def test_coordinator_communication_errors(hass, error_class, error_message):
-    """Test communication and device errors raise UpdateFailed."""
+async def test_coordinator_communication_errors(hass, error_class, error_message, expected_fragment):
+    """Test communication and device errors raise sanitized UpdateFailed."""
     coordinator = PiKVMDataUpdateCoordinator(
         hass=hass,
         url="https://pikvm.local",
@@ -107,4 +107,4 @@ async def test_coordinator_communication_errors(hass, error_class, error_message
 
     with pytest.raises(UpdateFailed) as exc_info:
         await coordinator._async_update_data()
-    assert "Error communicating with PiKVM API" in str(exc_info.value)
+    assert expected_fragment in str(exc_info.value)

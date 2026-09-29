@@ -70,11 +70,29 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # Retrieve the unique ID and serial number safely from the config entry
     stored_serial = entry.data.get(CONF_SERIAL)
     unique_id = entry.unique_id
+    effective_serial = stored_serial or unique_id or "unknown"
 
     # Check if the unique ID matches the stored serial number
     if stored_serial and unique_id != stored_serial:
         _LOGGER.debug("Updating unique ID from %s to %s", unique_id, stored_serial)
         hass.config_entries.async_update_entry(entry, unique_id=stored_serial)
+
+    # Pre-emptively remove legacy mismatched devices and update device registry names
+    # so offline and re-auth cards immediately display clean, disambiguated device names
+    dev_reg = dr.async_get(hass)
+    ent_reg = er.async_get(hass)
+    expected_ident = (DOMAIN, effective_serial) if effective_serial != "unknown" else None
+
+    for dev in dr.async_entries_for_config_entry(dev_reg, entry.entry_id):
+        is_mismatched = expected_ident is not None and expected_ident not in dev.identifiers
+        if is_mismatched:
+            _LOGGER.info("Removing legacy mismatched PiKVM device: %s (%s)", dev.name, dev.id)
+            for ent in er.async_entries_for_device(ent_reg, dev.id, include_disabled_entities=True):
+                ent_reg.async_remove(ent.entity_id)
+            dev_reg.async_remove_device(dev.id)
+        elif dev.name_by_user is None and dev.name in ("PiKVM", "pikvm", "localhost.localdomain", "", None):
+            _LOGGER.info("Updating legacy device name for %s to %s", dev.id, entry.title)
+            dev_reg.async_update_device(dev.id, name=entry.title)
 
     coordinator = PiKVMDataUpdateCoordinator(
         hass,
@@ -112,24 +130,35 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     hw_version = getattr(platform_info, "base", None) or platform.get("base")
     sw_version = getattr(coordinator.data, "kvmd_version", None) or kvmd.get("version")
 
-    # If the device reports a distinct server name, update the entry title
+    # If the entry has a custom title, honor it; otherwise disambiguate with discovered name or model
     discovered_name = getattr(coordinator.data, "name", None)
-    if discovered_name and discovered_name not in ("PiKVM", "pikvm", "localhost", "localhost.localdomain"):
-        new_title = f"{discovered_name} ({clean_host})"
-        if entry.title != new_title and (entry.title.startswith("PiKVM (") or entry.title == "PiKVM"):
-            hass.config_entries.async_update_entry(entry, title=new_title)
+    if entry.title and not (entry.title.startswith("PiKVM (") or entry.title in ("PiKVM", "pikvm")):
+        device_name = entry.title
+    elif discovered_name and discovered_name not in ("PiKVM", "pikvm", "localhost", "localhost.localdomain"):
+        device_name = f"{discovered_name} ({clean_host})"
+    elif model and model not in ("PiKVM", "pikvm"):
+        device_name = f"PiKVM {model} ({clean_host})"
+    else:
+        device_name = f"PiKVM ({clean_host})"
 
-    effective_serial = stored_serial or entry.unique_id or "unknown"
+    if entry.title != device_name and (entry.title.startswith("PiKVM (") or entry.title in ("PiKVM", "pikvm")):
+        hass.config_entries.async_update_entry(entry, title=device_name)
+
     coordinator.device_info = DeviceInfo(
         identifiers={(DOMAIN, effective_serial)},
         configuration_url=format_url(raw_host),
         serial_number=effective_serial,
         manufacturer=MANUFACTURER,
-        name=entry.title,
+        name=device_name,
         model=model,
         hw_version=hw_version,
         sw_version=sw_version,
     )
+
+    # Ensure device registry entry is in sync with latest device_name
+    existing_dev = dev_reg.async_get_device(identifiers={(DOMAIN, effective_serial)})
+    if existing_dev and existing_dev.name_by_user is None and existing_dev.name != device_name:
+        dev_reg.async_update_device(existing_dev.id, name=device_name)
 
     # Forward the setup to the sensor platform
     await hass.config_entries.async_forward_entry_setups(entry, ["sensor"])
@@ -143,15 +172,22 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
 
 async def _async_cleanup_devices(hass: HomeAssistant, entry: ConfigEntry) -> None:
-    """Remove devices that have no entities and belong to this config entry."""
+    """Remove devices that do not belong to this config entry or have no entities."""
     dev_reg = dr.async_get(hass)
     ent_reg = er.async_get(hass)
     
+    stored_serial = entry.data.get(CONF_SERIAL) or entry.unique_id
+    expected_ident = (DOMAIN, stored_serial) if stored_serial else None
+
     devices = dr.async_entries_for_config_entry(dev_reg, entry.entry_id)
     for device in devices:
         entities = er.async_entries_for_device(ent_reg, device.id, include_disabled_entities=True)
-        if not entities:
-            _LOGGER.info("Removing orphaned PiKVM device: %s", device.name)
+        is_mismatched = expected_ident is not None and expected_ident not in device.identifiers
+        if not entities or is_mismatched:
+            _LOGGER.info("Removing stale or orphaned PiKVM device: %s (%s)", device.name, device.id)
+            if is_mismatched:
+                for ent in entities:
+                    ent_reg.async_remove(ent.entity_id)
             dev_reg.async_remove_device(device.id)
 
 

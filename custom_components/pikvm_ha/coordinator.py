@@ -20,6 +20,7 @@ from pikvm_aio import (
     PiKVMError,
     PiKVMTimeoutError,
     format_url,
+    parse_host_port,
 )
 
 from .const import DOMAIN
@@ -59,6 +60,11 @@ class PiKVMDataUpdateCoordinator(DataUpdateCoordinator[PiKVMDeviceInfo]):
         self.cert = cert
         self.device_info = None
 
+        try:
+            self.clean_host = parse_host_port(self.url)[0]
+        except Exception:
+            self.clean_host = self.url.replace("https://", "").replace("http://", "").split("/")[0]
+
         super().__init__(
             hass,
             _LOGGER,
@@ -88,8 +94,14 @@ class PiKVMDataUpdateCoordinator(DataUpdateCoordinator[PiKVMDeviceInfo]):
             _LOGGER.debug("Fetching PiKVM Info & MSD from %s", self.url)
             return await self.client.get_info()
         except PiKVMAuthenticationError as auth_err:
-            _LOGGER.error("Authentication failed for %s: %s", self.url, auth_err)
-            raise ConfigEntryAuthFailed(f"Authentication failed: {auth_err}") from auth_err
-        except (PiKVMConnectionError, PiKVMTimeoutError, PiKVMDeviceError, PiKVMError) as err:
+            _LOGGER.error("Authentication failed for PiKVM at %s: %s", self.url, auth_err)
+            raise ConfigEntryAuthFailed("Invalid credentials or 2FA TOTP token required") from auth_err
+        except PiKVMTimeoutError as err:
+            _LOGGER.debug("Timeout connecting to PiKVM at %s: %s", self.url, err)
+            raise UpdateFailed(f"Connection timed out reaching {self.clean_host}") from err
+        except PiKVMConnectionError as err:
+            _LOGGER.debug("Connection error to PiKVM at %s: %s", self.url, err)
+            raise UpdateFailed(f"Cannot connect to {self.clean_host} (host offline or connection refused)") from err
+        except (PiKVMDeviceError, PiKVMError) as err:
             _LOGGER.debug("Error communicating with PiKVM API at %s: %s", self.url, err)
-            raise UpdateFailed(f"Error communicating with PiKVM API: {err}") from err
+            raise UpdateFailed(f"Error communicating with PiKVM at {self.clean_host}: {err}") from err

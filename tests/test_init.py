@@ -245,3 +245,46 @@ async def test_async_setup_entry_generic_title_disambiguation(hass, pikvm_cert, 
         # Title updated with device name and clean host
         assert entry.title == "pikvm.local (192.168.1.108)"
 
+
+@pytest.mark.asyncio
+async def test_async_setup_entry_migrates_legacy_device_name(hass, pikvm_cert, mock_device_info):
+    """Test legacy PiKVM device in registry is migrated even if first refresh fails."""
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        title="PiKVM",
+        unique_id="sn_offline_105",
+        data={
+            CONF_HOST: "https://192.168.1.105",
+            CONF_USERNAME: "admin",
+            CONF_PASSWORD: "secret_password",
+            CONF_SERIAL: "sn_offline_105",
+            CONF_CERTIFICATE: pikvm_cert,
+            CONF_TOTP: "",
+        },
+    )
+    entry.add_to_hass(hass)
+    entry.mock_state(hass, ConfigEntryState.SETUP_IN_PROGRESS)
+
+    dev_reg = dr.async_get(hass)
+    legacy_device = dev_reg.async_get_or_create(
+        config_entry_id=entry.entry_id,
+        identifiers={(DOMAIN, "sn_offline_105")},
+        name="PiKVM",
+    )
+    assert legacy_device.name == "PiKVM"
+
+    from homeassistant.exceptions import ConfigEntryNotReady
+    from pikvm_aio import PiKVMConnectionError
+
+    with patch(
+        "custom_components.pikvm_ha.coordinator.PiKVMClient.get_info",
+        side_effect=PiKVMConnectionError("Cannot connect"),
+    ):
+        with pytest.raises(ConfigEntryNotReady):
+            await async_setup_entry(hass, entry)
+
+    # Pre-emptive migration should have renamed the device in dev_reg before the refresh failed
+    migrated_device = dev_reg.async_get_device(identifiers={(DOMAIN, "sn_offline_105")})
+    assert migrated_device.name == "PiKVM (192.168.1.105)"
+
+
