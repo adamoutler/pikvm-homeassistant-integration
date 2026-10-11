@@ -10,3 +10,4 @@ coverage.json
 
 # Home Assistant config directory (created by docker-compose)
 ha_config/
+.venv/
