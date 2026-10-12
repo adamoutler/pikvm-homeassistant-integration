@@ -774,3 +774,205 @@ async def test_reauth_flow_cannot_connect(hass, pikvm_cert):
     assert result2["type"] == FlowResultType.FORM
     assert result2["errors"]["base"] == "cannot_connect"
 
+
+@pytest.mark.asyncio
+async def test_reauth_flow_totp_repopulates_when_empty_and_fails(hass, pikvm_cert):
+    """Reproduce issue where removing 2FA from device fails reauth because empty TOTP repopulates.
+
+    User scenario:
+    - Device at 192.168.1.2 had 2FA configured with an existing TOTP key.
+    - User removed 2FA from the PiKVM device, so the device only accepts password (without TOTP).
+    - When HA triggers reauth, the schema defaults CONF_TOTP to the existing key.
+    - When the user clears the 2FA key field (omitted in form submission when empty),
+      HA's FlowManager validates against the schema and repopulates CONF_TOTP with the old key.
+    - The integration generates an OTP code and appends it to the password, which the device
+      rejects because 2FA is no longer enabled on the device.
+    - Reauth fails and the key is not cleared.
+    """
+    existing_totp_key = "JBSWY3DPEHPK3PXP"
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        title="PiKVM Lab",
+        unique_id="sn_reauth_totp_clear_fail",
+        data={
+            CONF_HOST: "https://192.168.1.2",
+            CONF_USERNAME: "admin",
+            CONF_PASSWORD: "old_password",
+            CONF_SERIAL: "sn_reauth_totp_clear_fail",
+            CONF_CERTIFICATE: pikvm_cert,
+            CONF_TOTP: existing_totp_key,
+        },
+    )
+    entry.add_to_hass(hass)
+
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN,
+        context={
+            "source": config_entries.SOURCE_REAUTH,
+            "entry_id": entry.entry_id,
+            "unique_id": entry.unique_id,
+        },
+        data=entry.data,
+    )
+
+    assert result["type"] == FlowResultType.FORM
+    assert result["step_id"] == "reauth_confirm"
+
+    # Verify that the schema presented to the user has default=existing_totp_key
+    schema = result["data_schema"]
+    # Check that voluptuous repopulates the default when the field is omitted
+    validated_empty = schema({CONF_USERNAME: "admin", CONF_PASSWORD: "new_password"})
+    assert validated_empty[CONF_TOTP] == existing_totp_key
+
+    # Mock device where 2FA was removed: only accepts plain password, rejects password + OTP
+    async def mock_is_pikvm_device(hass_obj, host, username, password_attempt, cert):
+        if password_attempt == "new_password":
+            return PiKVMResponse(True, "v3", "sn_reauth_totp_clear_fail", "pikvm", None)
+        # Device without 2FA rejects any password that has OTP code appended
+        return PiKVMResponse(False, None, None, None, "Exception_HTTP403")
+
+    with patch(
+        "custom_components.pikvm_ha.config_flow.is_pikvm_device",
+        side_effect=mock_is_pikvm_device,
+    ) as mock_device_auth:
+        # User cleared the 2FA key in the UI, so CONF_TOTP is omitted in the submission
+        result2 = await hass.config_entries.flow.async_configure(
+            result["flow_id"],
+            user_input={
+                CONF_USERNAME: "admin",
+                CONF_PASSWORD: "new_password",
+            },
+        )
+
+    # Reauth failed because the old key was repopulated, generating an OTP the device rejected
+    assert result2["type"] == FlowResultType.FORM
+    assert result2["errors"]["base"] == "Exception_HTTP403"
+    # The config entry still retains the old TOTP key (was not cleared)
+    assert entry.data[CONF_TOTP] == existing_totp_key
+    # The device was called with password + OTP (length > len('new_password')), not plain password
+    called_password = mock_device_auth.call_args[0][3]
+    assert called_password != "new_password"
+    assert called_password.startswith("new_password")
+    assert len(called_password) == len("new_password") + 6
+
+
+@pytest.mark.asyncio
+async def test_reauth_flow_clear_totp_with_space_workaround(hass, pikvm_cert):
+    """Reproduce the user's workaround: entering a space allows clearing the 2FA key.
+
+    User scenario:
+    - User puts a space in the 2FA field (" ") to prevent the frontend/schema from repopulating.
+    - Since CONF_TOTP is present (" "), the schema default is not applied.
+    - user_input.get(CONF_TOTP, "").strip() strips the space to an empty string.
+    - No TOTP code is appended, so the device authentication succeeds.
+    - Reauth succeeds and CONF_TOTP is updated to "" in the config entry.
+    """
+    existing_totp_key = "JBSWY3DPEHPK3PXP"
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        title="PiKVM Lab",
+        unique_id="sn_reauth_totp_space_workaround",
+        data={
+            CONF_HOST: "https://192.168.1.2",
+            CONF_USERNAME: "admin",
+            CONF_PASSWORD: "old_password",
+            CONF_SERIAL: "sn_reauth_totp_space_workaround",
+            CONF_CERTIFICATE: pikvm_cert,
+            CONF_TOTP: existing_totp_key,
+        },
+    )
+    entry.add_to_hass(hass)
+
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN,
+        context={
+            "source": config_entries.SOURCE_REAUTH,
+            "entry_id": entry.entry_id,
+            "unique_id": entry.unique_id,
+        },
+        data=entry.data,
+    )
+
+    assert result["type"] == FlowResultType.FORM
+    assert result["step_id"] == "reauth_confirm"
+
+    # Mock device where 2FA was removed: only accepts plain password, rejects password + OTP
+    async def mock_is_pikvm_device(hass_obj, host, username, password_attempt, cert):
+        if password_attempt == "new_password":
+            return PiKVMResponse(True, "v3", "sn_reauth_totp_space_workaround", "pikvm", None)
+        return PiKVMResponse(False, None, None, None, "Exception_HTTP403")
+
+    with patch(
+        "custom_components.pikvm_ha.config_flow.is_pikvm_device",
+        side_effect=mock_is_pikvm_device,
+    ) as mock_device_auth:
+        # User entered a space " " to prevent repopulating the default
+        result2 = await hass.config_entries.flow.async_configure(
+            result["flow_id"],
+            user_input={
+                CONF_USERNAME: "admin",
+                CONF_PASSWORD: "new_password",
+                CONF_TOTP: " ",
+            },
+        )
+
+    # Reauth succeeds!
+    assert result2["type"] == FlowResultType.ABORT
+    assert result2["reason"] == "reauth_successful"
+    # The config entry has updated password and the TOTP key is successfully cleared to ""
+    assert entry.data[CONF_PASSWORD] == "new_password"
+    assert entry.data[CONF_TOTP] == ""
+    # The device was called with exactly "new_password" without OTP
+    mock_device_auth.assert_called_once_with(
+        hass,
+        "https://192.168.1.2",
+        "admin",
+        "new_password",
+        pikvm_cert,
+    )
+
+
+@pytest.mark.asyncio
+async def test_reauth_schema_totp_default_serialization(hass, pikvm_cert):
+    """Test that reauth schema serializes CONF_TOTP with default value causing UI repopulation.
+
+    Home Assistant frontend uses voluptuous_serialize to convert data_schema.
+    When a schema field specifies 'default', the frontend treats empty inputs as
+    defaulting to that value, repopulating the field unless a non-empty character (like space) is entered.
+    """
+    import voluptuous_serialize
+
+    existing_totp_key = "JBSWY3DPEHPK3PXP"
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        title="PiKVM Lab",
+        unique_id="sn_reauth_schema_check",
+        data={
+            CONF_HOST: "https://192.168.1.2",
+            CONF_USERNAME: "admin",
+            CONF_PASSWORD: "old_password",
+            CONF_SERIAL: "sn_reauth_schema_check",
+            CONF_CERTIFICATE: pikvm_cert,
+            CONF_TOTP: existing_totp_key,
+        },
+    )
+    entry.add_to_hass(hass)
+
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN,
+        context={
+            "source": config_entries.SOURCE_REAUTH,
+            "entry_id": entry.entry_id,
+        },
+        data=entry.data,
+    )
+
+    schema = result["data_schema"]
+    serialized = voluptuous_serialize.convert(schema)
+
+    totp_field = next(f for f in serialized if f["name"] == CONF_TOTP)
+    # The field contains 'default' set to the existing TOTP key
+    assert totp_field["default"] == existing_totp_key
+    assert totp_field["optional"] is True
+
+
