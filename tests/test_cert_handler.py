@@ -158,3 +158,22 @@ async def test_is_pikvm_device_generic_exception(hass, pikvm_cert):
             hass, "https://pikvm.local", "admin", "pass", pikvm_cert
         )
         assert resp == PiKVMResponse(False, None, None, None, "cannot_connect")
+
+
+def test_cert_handler_no_verify_ssl_context_exception():
+    """Test fallback when get_default_no_verify_context raises an Exception (lines 28-29)."""
+    import importlib
+
+    with patch(
+        "homeassistant.util.ssl.get_default_no_verify_context",
+        side_effect=RuntimeError("SSL context error"),
+    ):
+        import custom_components.pikvm_ha.cert_handler as cert_handler
+
+        importlib.reload(cert_handler)
+        assert cert_handler._DEFAULT_NO_VERIFY_SSL_CONTEXT is None
+
+    # Reload again to restore normal context for subsequent tests
+    importlib.reload(cert_handler)
+    assert cert_handler._DEFAULT_NO_VERIFY_SSL_CONTEXT is not None
+

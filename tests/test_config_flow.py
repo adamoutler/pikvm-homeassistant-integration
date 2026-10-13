@@ -976,3 +976,118 @@ async def test_reauth_schema_totp_default_serialization(hass, pikvm_cert):
     assert totp_field["optional"] is True
 
 
+@pytest.mark.asyncio
+async def test_perform_device_setup_invalid_totp(hass):
+    """Test perform_device_setup returns invalid_totp error on invalid base32 secret (covers lines 66-71)."""
+    flow = config_flow.PiKVMConfigFlow()
+    flow.hass = hass
+
+    user_input = {
+        CONF_HOST: "https://pikvm.local",
+        CONF_USERNAME: "admin",
+        CONF_PASSWORD: "secret",
+        CONF_TOTP: "INVALID_BASE32_!@#$",
+    }
+
+    entry, errors = await config_flow.perform_device_setup(flow, user_input)
+
+    assert entry is None
+    assert errors["base"] == "invalid_totp"
+
+
+@pytest.mark.asyncio
+async def test_perform_device_setup_parse_host_port_exception(hass, pikvm_cert):
+    """Test perform_device_setup falls back to host when parse_host_port raises (covers lines 119-120)."""
+    flow = config_flow.PiKVMConfigFlow()
+    flow.hass = hass
+    flow.async_set_unique_id = AsyncMock()
+    flow.async_create_entry = MagicMock(return_value={"type": FlowResultType.CREATE_ENTRY})
+
+    user_input = {
+        CONF_HOST: "https://pikvm.local",
+        CONF_USERNAME: "admin",
+        CONF_PASSWORD: "secret",
+    }
+    response = PiKVMResponse(True, "V3", "serial-1234", "My PiKVM", None)
+
+    with (
+        patch(
+            "custom_components.pikvm_ha.config_flow.fetch_serialized_cert",
+            new=AsyncMock(return_value=pikvm_cert),
+        ),
+        patch(
+            "custom_components.pikvm_ha.config_flow.is_pikvm_device",
+            new=AsyncMock(return_value=response),
+        ),
+        patch(
+            "custom_components.pikvm_ha.config_flow.find_existing_entry",
+            return_value=None,
+        ),
+        patch(
+            "custom_components.pikvm_ha.config_flow.parse_host_port",
+            side_effect=Exception("Failed parsing host"),
+        ),
+    ):
+        entry, errors = await config_flow.perform_device_setup(flow, user_input)
+
+    assert entry == {"type": FlowResultType.CREATE_ENTRY}
+    assert errors is None
+
+
+def test_config_flow_get_reauth_entry_fallback(hass):
+    """Test _get_reauth_entry fallback when super() lacks the method (covers lines 318-319)."""
+    entry = MockConfigEntry(domain=DOMAIN, data={})
+    entry.add_to_hass(hass)
+
+    flow = config_flow.PiKVMConfigFlow()
+    flow.hass = hass
+    flow.context = {"entry_id": entry.entry_id}
+
+    orig_method = getattr(config_entries.ConfigFlow, "_get_reauth_entry", None)
+    try:
+        if orig_method is not None:
+            delattr(config_entries.ConfigFlow, "_get_reauth_entry")
+        reauth_entry = flow._get_reauth_entry()
+        assert reauth_entry == entry
+    finally:
+        if orig_method is not None:
+            setattr(config_entries.ConfigFlow, "_get_reauth_entry", orig_method)
+
+
+@pytest.mark.asyncio
+async def test_reauth_confirm_parse_host_port_exception(hass, pikvm_cert):
+    """Test async_step_reauth_confirm fallback when parse_host_port raises (covers lines 377-378)."""
+    raw_host = "https://192.168.1.50:443"
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        title="PiKVM Lab",
+        unique_id="sn_reauth_parse_fail",
+        data={
+            CONF_HOST: raw_host,
+            CONF_USERNAME: "admin",
+            CONF_PASSWORD: "old_password",
+            CONF_SERIAL: "sn_reauth_parse_fail",
+            CONF_CERTIFICATE: pikvm_cert,
+        },
+    )
+    entry.add_to_hass(hass)
+
+    with patch(
+        "custom_components.pikvm_ha.config_flow.parse_host_port",
+        side_effect=Exception("Failed to parse host"),
+    ):
+        result = await hass.config_entries.flow.async_init(
+            DOMAIN,
+            context={
+                "source": config_entries.SOURCE_REAUTH,
+                "entry_id": entry.entry_id,
+            },
+            data=entry.data,
+        )
+
+    assert result["type"] == FlowResultType.FORM
+    assert result["step_id"] == "reauth_confirm"
+    assert result["description_placeholders"]["host"] == raw_host
+
+
+

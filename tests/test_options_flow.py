@@ -16,6 +16,7 @@ from custom_components.pikvm_ha.const import (
     CONF_HOST,
     CONF_PASSWORD,
     CONF_SERIAL,
+    CONF_TOTP,
     CONF_USERNAME,
     DEFAULT_PASSWORD,
     DEFAULT_USERNAME,
@@ -507,3 +508,124 @@ async def test_handle_user_input_cannot_connect(hass):
 
     assert result is None
     assert errors["base"] == "cannot_connect"
+
+
+@pytest.mark.asyncio
+async def test_options_flow_with_totp_secret(hass):
+    """Test options flow generates and appends TOTP code when totp is provided (covers line 62)."""
+    config_entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={
+            CONF_HOST: "https://old-host",
+            CONF_USERNAME: "admin",
+            CONF_PASSWORD: DEFAULT_PASSWORD,
+            CONF_SERIAL: "old-serial",
+            CONF_CERTIFICATE: "old-cert",
+        },
+    )
+    config_entry.add_to_hass(hass)
+
+    totp_secret = "JBSWY3DPEHPK3PXP"
+    new_user_input = {
+        CONF_HOST: "pikvm.local",
+        CONF_USERNAME: "new_admin",
+        CONF_PASSWORD: "new_secret",
+        CONF_TOTP: totp_secret,
+    }
+
+    with patch(
+        "custom_components.pikvm_ha.options_flow.get_translations",
+        new=AsyncMock(return_value=lambda key, default: default),
+    ):
+        init_result = await hass.config_entries.options.async_init(
+            config_entry.entry_id
+        )
+
+        with (
+            patch(
+                "custom_components.pikvm_ha.options_flow.fetch_serialized_cert",
+                new=AsyncMock(return_value="new-cert"),
+            ),
+            patch(
+                "custom_components.pikvm_ha.options_flow.is_pikvm_device",
+                new=AsyncMock(
+                    return_value=PiKVMResponse(
+                        True, "model", "pikvm-9999", "My PiKVM", None
+                    )
+                ),
+            ) as mock_is_pikvm,
+        ):
+            result = await hass.config_entries.options.async_configure(
+                init_result["flow_id"],
+                user_input=new_user_input,
+            )
+
+    assert result["type"] == FlowResultType.CREATE_ENTRY
+    called_password = mock_is_pikvm.call_args[0][3]
+    assert called_password.startswith("new_secret")
+    assert len(called_password) == len("new_secret") + 6
+
+
+@pytest.mark.asyncio
+async def test_options_flow_translation_not_callable_fallback(hass):
+    """Test options flow _tr returns default when translations are not callable (covers line 132)."""
+    config_entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={
+            CONF_HOST: "https://pikvm.local",
+            CONF_USERNAME: "admin",
+            CONF_PASSWORD: "password",
+        },
+    )
+    config_entry.add_to_hass(hass)
+
+    with patch(
+        "custom_components.pikvm_ha.options_flow.get_translations",
+        new=AsyncMock(return_value=None),
+    ):
+        result = await hass.config_entries.options.async_init(
+            config_entry.entry_id
+        )
+
+    assert result["type"] == FlowResultType.FORM
+    placeholders = result["description_placeholders"]
+    assert placeholders["url"] == "URL or IP address of the PiKVM device"
+    assert placeholders["username"] == "Username for PiKVM"
+    assert placeholders["password"] == "Password for PiKVM"
+    assert placeholders["totp"] == "2FA secret for PiKVM (if enabled)"
+
+
+@pytest.mark.asyncio
+async def test_handle_user_input_with_totp_secret(hass):
+    """Test handle_user_input generates TOTP code when totp is provided (covers line 158)."""
+    flow = _DummyFlow(hass)
+    totp_secret = "JBSWY3DPEHPK3PXP"
+
+    with (
+        patch(
+            "custom_components.pikvm_ha.options_flow.fetch_serialized_cert",
+            new=AsyncMock(return_value="cert"),
+        ),
+        patch(
+            "custom_components.pikvm_ha.options_flow.is_pikvm_device",
+            new=AsyncMock(
+                return_value=PiKVMResponse(True, "model", "SERIAL_TOTP", "My PiKVM", None)
+            ),
+        ) as mock_is_pikvm,
+    ):
+        result, errors = await handle_user_input(
+            flow,
+            {
+                CONF_HOST: "pikvm.local",
+                CONF_USERNAME: "user",
+                CONF_PASSWORD: "secret_password",
+                CONF_TOTP: totp_secret,
+            },
+        )
+
+    assert errors is None
+    assert result["data"][CONF_SERIAL] == "SERIAL_TOTP"
+    called_password = mock_is_pikvm.call_args[0][3]
+    assert called_password.startswith("secret_password")
+    assert len(called_password) == len("secret_password") + 6
+

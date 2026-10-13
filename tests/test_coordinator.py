@@ -108,3 +108,39 @@ async def test_coordinator_communication_errors(hass, error_class, error_message
     with pytest.raises(UpdateFailed) as exc_info:
         await coordinator._async_update_data()
     assert expected_fragment in str(exc_info.value)
+
+
+def test_coordinator_ssl_context_fallback():
+    """Test fallback when get_default_no_verify_context raises an Exception (covers lines 34-35)."""
+    import importlib
+    import custom_components.pikvm_ha.coordinator as coordinator_mod
+
+    with patch(
+        "homeassistant.util.ssl.get_default_no_verify_context",
+        side_effect=Exception("Failed to get SSL context"),
+    ):
+        importlib.reload(coordinator_mod)
+        assert coordinator_mod._DEFAULT_NO_VERIFY_SSL_CONTEXT is None
+
+    # Restore module state
+    importlib.reload(coordinator_mod)
+    assert coordinator_mod._DEFAULT_NO_VERIFY_SSL_CONTEXT is not None
+
+
+@pytest.mark.asyncio
+async def test_coordinator_parse_host_port_exception(hass):
+    """Test clean_host fallback when parse_host_port raises an Exception (covers lines 65-66)."""
+    with patch(
+        "custom_components.pikvm_ha.coordinator.parse_host_port",
+        side_effect=Exception("Failed parsing host"),
+    ):
+        coordinator = PiKVMDataUpdateCoordinator(
+            hass=hass,
+            url="https://pikvm-custom.local:8443/api",
+            username="admin",
+            password="password",
+            totp="",
+            cert="",
+        )
+        assert coordinator.clean_host == "pikvm-custom.local:8443"
+
