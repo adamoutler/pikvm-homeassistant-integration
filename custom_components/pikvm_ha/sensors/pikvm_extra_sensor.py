@@ -1,5 +1,7 @@
 """Module for PiKVM extra sensor integration."""
 
+from __future__ import annotations
+
 from homeassistant.const import EntityCategory
 
 from ..sensor import PiKVMBaseSensor
@@ -32,12 +34,25 @@ class PiKVMExtraSensor(PiKVMBaseSensor):
         self._attr_entity_category = EntityCategory.DIAGNOSTIC
 
     @property
-    def state(self):
-        """Return the state of the sensor."""
+    def available(self) -> bool:
+        """Return True if the entity is available."""
+        if not super().available:
+            return False
+        extras = get_nested_value(self.coordinator.data, ["extras"], {})
+        return self._extra_name in extras
+
+    @property
+    def native_value(self) -> bool:
+        """Return the native running state."""
         extra_data = get_nested_value(
             self.coordinator.data, ["extras", self._extra_name], {}
         )
-        return extra_data.get("is_running", False)
+        return bool(extra_data.get("is_running", False))
+
+    @property
+    def state(self) -> bool:
+        """Return the state of the sensor."""
+        return self.native_value
 
     @property
     def extra_state_attributes(self):

@@ -17,6 +17,21 @@ from custom_components.pikvm_ha.sensors.pikvm_msd_enabled_sensor import PiKVMSDE
 from custom_components.pikvm_ha.sensors.pikvm_msd_drive_sensor import PiKVMSDDriveSensor
 from custom_components.pikvm_ha.sensors.pikvm_msd_storage_sensor import PiKVMSDStorageSensor
 from custom_components.pikvm_ha.sensors.pikvm_extra_sensor import PiKVMExtraSensor
+from custom_components.pikvm_ha.sensor import (
+    CPU_TEMP_SENSOR_DESCRIPTION,
+    CPU_UTILIZATION_SENSOR_DESCRIPTION,
+    FAN_SPEED_SENSOR_DESCRIPTION,
+    MEMORY_UTILIZATION_SENSOR_DESCRIPTION,
+    MSD_STORAGE_SENSOR_DESCRIPTION,
+    _get_cpu_temp,
+    _get_cpu_utilization,
+    _get_fan_attributes,
+    _get_fan_speed,
+    _get_memory_attributes,
+    _get_memory_utilization,
+    _get_msd_storage,
+    _get_msd_storage_attributes,
+)
 
 
 @pytest.fixture
@@ -424,5 +439,309 @@ def test_throttling_sensor_extra_state_attributes(mock_coordinator):
     mock_coordinator.data = {"hw": {"health": {}}}
     assert sensor.extra_state_attributes == {}
     assert sensor.state is False
+
+
+# ---------------------------------------------------------------------------
+# Coverage for pikvm_extra_sensor.py (lines 39-42)
+# ---------------------------------------------------------------------------
+
+def test_extra_sensor_available(mock_coordinator):
+    """Test available property of PiKVMExtraSensor (lines 39-42)."""
+    mock_coordinator.last_update_success = True
+    mock_coordinator.data = {"extras": {"vnc": {"is_running": True}}}
+    sensor = PiKVMExtraSensor(mock_coordinator, "vnc", {}, "test_id", "Test PiKVM")
+
+    # Lines 41-42: True when super().available is True and extra name is in extras
+    assert sensor.available is True
+
+    # Lines 41-42: False when extra name is not in extras
+    mock_coordinator.data = {"extras": {}}
+    assert sensor.available is False
+
+    mock_coordinator.data = {}
+    assert sensor.available is False
+
+    # Lines 39-40: False when coordinator update failed (super().available is False)
+    mock_coordinator.data = {"extras": {"vnc": {"is_running": True}}}
+    mock_coordinator.last_update_success = False
+    assert sensor.available is False
+
+
+# ---------------------------------------------------------------------------
+# Coverage for pikvm_msd_drive_sensor.py (line 20)
+# ---------------------------------------------------------------------------
+
+def test_msd_drive_sensor_available(mock_coordinator):
+    """Test available property of PiKVMSDDriveSensor (line 20)."""
+    sensor = PiKVMSDDriveSensor(mock_coordinator, "test_id", "Test PiKVM")
+
+    # True when super().available is True and msd drive data exists
+    mock_coordinator.last_update_success = True
+    mock_coordinator.data = {"msd": {"drive": {"is_mounted": True}}}
+    assert sensor.available is True
+
+    # False when drive is None or missing
+    mock_coordinator.data = {"msd": {"drive": None}}
+    assert sensor.available is False
+
+    mock_coordinator.data = {"msd": {}}
+    assert sensor.available is False
+
+    mock_coordinator.data = {}
+    assert sensor.available is False
+
+    # False when coordinator update failed (super().available is False)
+    mock_coordinator.data = {"msd": {"drive": {"is_mounted": True}}}
+    mock_coordinator.last_update_success = False
+    assert sensor.available is False
+
+
+# ---------------------------------------------------------------------------
+# Coverage for pikvm_msd_enabled_sensor.py (line 29)
+# ---------------------------------------------------------------------------
+
+def test_msd_enabled_sensor_available(mock_coordinator):
+    """Test available property of PiKVMSDEnabledSensor (line 29)."""
+    sensor = PiKVMSDEnabledSensor(mock_coordinator, "test_id", "Test PiKVM")
+
+    # True when super().available is True and msd data exists
+    mock_coordinator.last_update_success = True
+    mock_coordinator.data = {"msd": {"is_enabled": True}}
+    assert sensor.available is True
+
+    # False when msd is None or missing
+    mock_coordinator.data = {"msd": None}
+    assert sensor.available is False
+
+    mock_coordinator.data = {}
+    assert sensor.available is False
+
+    # False when coordinator update failed (super().available is False)
+    mock_coordinator.data = {"msd": {"is_enabled": True}}
+    mock_coordinator.last_update_success = False
+    assert sensor.available is False
+
+
+# ---------------------------------------------------------------------------
+# Coverage for pikvm_throttling_sensor.py (lines 26-29)
+# ---------------------------------------------------------------------------
+
+def test_throttling_sensor_available(mock_coordinator):
+    """Test available property branches of PiKVMThrottlingSensor (lines 26-29)."""
+    sensor = PiKVMThrottlingSensor(mock_coordinator, "test_id", "Test PiKVM")
+
+    # Branch 1: super().available is True and "throttling" in hw.health
+    mock_coordinator.last_update_success = True
+    mock_coordinator.data = {"hw": {"health": {"throttling": {"raw_flags": 0}}}}
+    assert sensor.available is True
+
+    # Branch 2: super().available is True, "throttling" not in health, but "health" in hw
+    mock_coordinator.data = {"hw": {"health": {}}}
+    assert sensor.available is True
+
+    # Branch 3: super().available is True, neither "throttling" nor "health" in hw
+    mock_coordinator.data = {"hw": {}}
+    assert sensor.available is False
+
+    mock_coordinator.data = {}
+    assert sensor.available is False
+
+    # Branch 4: super().available is False (coordinator update failed)
+    mock_coordinator.data = {"hw": {"health": {"throttling": {"raw_flags": 0}}}}
+    mock_coordinator.last_update_success = False
+    assert sensor.available is False
+
+
+# ---------------------------------------------------------------------------
+# Helper functions coverage in sensor.py (lines 47-51, 55-59, 63-67, 82-86, 93-130)
+# ---------------------------------------------------------------------------
+
+def test_get_cpu_temp_error_handling():
+    """Test _get_cpu_temp valid values, None handling, and ValueError/TypeError handling (lines 47-51)."""
+    # Valid float and int values
+    assert _get_cpu_temp({"hw": {"health": {"temp": {"cpu": 42.5}}}}) == 42.5
+    assert _get_cpu_temp({"hw": {"health": {"temp": {"cpu": 40}}}}) == 40.0
+    assert _get_cpu_temp({"hw": {"health": {"temp": {"cpu": "43.2"}}}}) == 43.2
+
+    # None and missing keys
+    assert _get_cpu_temp({"hw": {"health": {"temp": {"cpu": None}}}}) is None
+    assert _get_cpu_temp({"hw": {"health": {"temp": {}}}}) is None
+    assert _get_cpu_temp({}) is None
+
+    # ValueError branch (line 50-51)
+    assert _get_cpu_temp({"hw": {"health": {"temp": {"cpu": "not_a_number"}}}}) is None
+
+    # TypeError branch (line 50-51)
+    assert _get_cpu_temp({"hw": {"health": {"temp": {"cpu": ["invalid_type"]}}}}) is None
+    assert _get_cpu_temp({"hw": {"health": {"temp": {"cpu": {"nested": "dict"}}}}}) is None
+
+
+def test_get_cpu_utilization_error_handling():
+    """Test _get_cpu_utilization valid values, None, and ValueError/TypeError handling (lines 55-59)."""
+    # Valid float and int values
+    assert _get_cpu_utilization({"hw": {"performance": {"cpu": {"utilization": 15.5}}}}) == 15.5
+    assert _get_cpu_utilization({"hw": {"performance": {"cpu": {"utilization": 20}}}}) == 20.0
+    assert _get_cpu_utilization({"hw": {"performance": {"cpu": {"utilization": "25.0"}}}}) == 25.0
+
+    # None and missing keys
+    assert _get_cpu_utilization({"hw": {"performance": {"cpu": {"utilization": None}}}}) is None
+    assert _get_cpu_utilization({"hw": {"performance": {"cpu": {}}}}) is None
+    assert _get_cpu_utilization({}) is None
+
+    # ValueError branch (line 58-59)
+    assert _get_cpu_utilization({"hw": {"performance": {"cpu": {"utilization": "invalid"}}}}) is None
+
+    # TypeError branch (line 58-59)
+    assert _get_cpu_utilization({"hw": {"performance": {"cpu": {"utilization": [50.0]}}}}) is None
+    assert _get_cpu_utilization({"hw": {"performance": {"cpu": {"utilization": {}}}}}) is None
+
+
+def test_get_memory_utilization_error_handling():
+    """Test _get_memory_utilization valid values, None, and ValueError/TypeError handling (lines 63-67)."""
+    # Valid float and int values
+    assert _get_memory_utilization({"hw": {"performance": {"memory": {"utilization": 60.5}}}}) == 60.5
+    assert _get_memory_utilization({"hw": {"performance": {"memory": {"utilization": 50}}}}) == 50.0
+    assert _get_memory_utilization({"hw": {"performance": {"memory": {"utilization": "70.2"}}}}) == 70.2
+
+    # None and missing keys
+    assert _get_memory_utilization({"hw": {"performance": {"memory": {"utilization": None}}}}) is None
+    assert _get_memory_utilization({"hw": {"performance": {"memory": {}}}}) is None
+    assert _get_memory_utilization({}) is None
+
+    # ValueError branch (line 66-67)
+    assert _get_memory_utilization({"hw": {"performance": {"memory": {"utilization": "bad_value"}}}}) is None
+
+    # TypeError branch (line 66-67)
+    assert _get_memory_utilization({"hw": {"performance": {"memory": {"utilization": ["bad"]}}}}) is None
+    assert _get_memory_utilization({"hw": {"performance": {"memory": {"utilization": {}}}}}) is None
+
+
+def test_get_fan_speed_error_handling():
+    """Test _get_fan_speed valid values, None, and ValueError/TypeError handling (lines 82-86)."""
+    # Valid int and string-int values
+    assert _get_fan_speed({"hw": {"performance": {"fan": {"speed": 2400}}}}) == 2400
+    assert _get_fan_speed({"hw": {"performance": {"fan": {"speed": "3000"}}}}) == 3000
+
+    # None and missing keys
+    assert _get_fan_speed({"hw": {"performance": {"fan": {"speed": None}}}}) is None
+    assert _get_fan_speed({"hw": {"performance": {"fan": {}}}}) is None
+    assert _get_fan_speed({}) is None
+
+    # ValueError branch (line 85-86)
+    assert _get_fan_speed({"hw": {"performance": {"fan": {"speed": "fast"}}}}) is None
+    assert _get_fan_speed({"hw": {"performance": {"fan": {"speed": "12.34"}}}}) is None
+
+    # TypeError branch (line 85-86)
+    assert _get_fan_speed({"hw": {"performance": {"fan": {"speed": [2400]}}}}) is None
+    assert _get_fan_speed({"hw": {"performance": {"fan": {"speed": {"rpm": 2400}}}}}) is None
+
+
+def test_sensor_helper_memory_and_fan_attributes():
+    """Test _get_memory_attributes and _get_fan_attributes branches (lines 70-78, 89-91)."""
+    # Memory attributes: both present
+    data_full = {
+        "hw": {
+            "performance": {
+                "memory": {
+                    "available": 1048576,  # 1 MB
+                    "total": 2097152,      # 2 MB
+                },
+                "fan": {
+                    "speed": 1500,
+                    "status": "ok",
+                },
+            }
+        }
+    }
+    mem_attrs = _get_memory_attributes(data_full)
+    assert mem_attrs["available MB"] == 1.0
+    assert mem_attrs["total MB"] == 2.0
+
+    fan_attrs = _get_fan_attributes(data_full)
+    assert fan_attrs == {"speed": 1500, "status": "ok"}
+
+    # Memory attributes: missing keys
+    assert _get_memory_attributes({}) == {}
+    assert _get_memory_attributes({"hw": {"performance": {"memory": {}}}}) == {}
+
+    # Fan attributes: missing or empty
+    assert _get_fan_attributes({}) == {}
+    assert _get_fan_attributes({"hw": {"performance": {"fan": None}}}) == {}
+
+
+def test_sensor_helper_msd_storage_and_attributes():
+    """Test _get_msd_storage and _get_msd_storage_attributes coverage (lines 93-130)."""
+    # Invalid / missing storage
+    assert _get_msd_storage({}) is None
+    assert _get_msd_storage({"msd": {"storage": {"total": 0, "available": 0}}}) is None
+    assert _get_msd_storage({"msd": {"storage": {"total": -100, "available": 10}}}) is None
+    assert _get_msd_storage({"msd": {"storage": {"total": None, "available": 10}}}) is None
+    assert _get_msd_storage({"msd": {"storage": {"total": 100, "available": None}}}) is None
+
+    # Valid storage
+    data_valid = {
+        "msd": {
+            "storage": {
+                "total": 1048576000,
+                "available": 524288000,
+                "images": {
+                    "boot.iso": {"size": 209715200},
+                    "empty.iso": {"size": None},
+                },
+            }
+        }
+    }
+    assert _get_msd_storage(data_valid) == 50.0
+
+    attrs = _get_msd_storage_attributes(data_valid)
+    assert attrs["percent_used"] == 50.0
+    assert attrs["boot.iso"] == 209715200
+    assert "empty.iso" not in attrs
+
+    # Images >= 20 branch
+    images_large = {f"img_{i}.iso": {"size": 1000} for i in range(25)}
+    data_large = {
+        "msd": {
+            "storage": {
+                "total": 1000000,
+                "available": 500000,
+                "images": images_large,
+            }
+        }
+    }
+    attrs_large = _get_msd_storage_attributes(data_large)
+    assert attrs_large["file count"] == 25
+
+
+def test_sensor_descriptions_available_fn():
+    """Test available_fn closures across all SENSOR_DESCRIPTIONS (lines 144, 157, 171, 184, 198)."""
+    valid_data = {
+        "hw": {
+            "health": {"temp": {"cpu": 45.0}},
+            "performance": {
+                "cpu": {"utilization": 20.0},
+                "memory": {"utilization": 40.0},
+                "fan": {"speed": 1200},
+            },
+        },
+        "msd": {
+            "storage": {"total": 1000, "available": 500},
+        },
+    }
+    # True branches
+    assert CPU_TEMP_SENSOR_DESCRIPTION.available_fn(valid_data) is True
+    assert CPU_UTILIZATION_SENSOR_DESCRIPTION.available_fn(valid_data) is True
+    assert MEMORY_UTILIZATION_SENSOR_DESCRIPTION.available_fn(valid_data) is True
+    assert FAN_SPEED_SENSOR_DESCRIPTION.available_fn(valid_data) is True
+    assert MSD_STORAGE_SENSOR_DESCRIPTION.available_fn(valid_data) is True
+
+    # False branches
+    empty_data = {}
+    assert CPU_TEMP_SENSOR_DESCRIPTION.available_fn(empty_data) is False
+    assert CPU_UTILIZATION_SENSOR_DESCRIPTION.available_fn(empty_data) is False
+    assert MEMORY_UTILIZATION_SENSOR_DESCRIPTION.available_fn(empty_data) is False
+    assert FAN_SPEED_SENSOR_DESCRIPTION.available_fn(empty_data) is False
+    assert MSD_STORAGE_SENSOR_DESCRIPTION.available_fn(empty_data) is False
+
 
 

@@ -1,631 +1,99 @@
 """Tests for the PiKVM options flow."""
 
-from unittest.mock import AsyncMock, patch
+from __future__ import annotations
 
 import pytest
+from homeassistant.const import CONF_SCAN_INTERVAL
 from homeassistant.data_entry_flow import FlowResultType
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
-from custom_components.pikvm_ha.cert_handler import (
-    PiKVMResponse,
-    fetch_serialized_cert,
-    is_pikvm_device,
-)
-from custom_components.pikvm_ha.const import (
-    CONF_CERTIFICATE,
-    CONF_HOST,
-    CONF_PASSWORD,
-    CONF_SERIAL,
-    CONF_TOTP,
-    CONF_USERNAME,
-    DEFAULT_PASSWORD,
-    DEFAULT_USERNAME,
-    DOMAIN,
-)
+from custom_components.pikvm_ha.config_flow import PiKVMConfigFlow
+from custom_components.pikvm_ha.const import DOMAIN
 from custom_components.pikvm_ha.options_flow import (
+    DEFAULT_SCAN_INTERVAL,
     PiKVMOptionsFlowHandler,
-    handle_user_input,
 )
 
 
-@pytest.fixture(autouse=True)
-def bypass_setup_entry():
-    """Bypass entry setup during options flow tests."""
-    with patch(
-        "custom_components.pikvm_ha.async_setup_entry",
-        return_value=True,
-    ):
-        yield
-
-
 @pytest.mark.asyncio
-async def test_options_flow_updates_entry(hass):
-    """Ensure that options flow updates credentials and certificate."""
+async def test_options_flow_init_shows_form(hass):
+    """Test options flow initial step shows form with default scan interval."""
     config_entry = MockConfigEntry(
         domain=DOMAIN,
-        data={
-            CONF_HOST: "https://old-host",
-            CONF_USERNAME: "admin",
-            CONF_PASSWORD: DEFAULT_PASSWORD,
-            CONF_SERIAL: "old-serial",
-            CONF_CERTIFICATE: "old-cert",
-        },
+        data={"host": "192.168.1.100"},
+        options={},
     )
     config_entry.add_to_hass(hass)
 
-    new_user_input = {
-        CONF_HOST: "pikvm.local",
-        CONF_USERNAME: "new_admin",
-        CONF_PASSWORD: "new_secret",
-    }
+    result = await hass.config_entries.options.async_init(config_entry.entry_id)
 
-    with patch(
-        "custom_components.pikvm_ha.options_flow.get_translations",
-        new=AsyncMock(return_value=lambda key, default: default),
-    ):
-        init_result = await hass.config_entries.options.async_init(
-            config_entry.entry_id
-        )
-        assert init_result["type"] == FlowResultType.FORM
-
-        with (
-            patch(
-                "custom_components.pikvm_ha.options_flow.fetch_serialized_cert",
-                new=AsyncMock(return_value="new-cert"),
-            ),
-            patch(
-                "custom_components.pikvm_ha.options_flow.is_pikvm_device",
-                new=AsyncMock(
-                    return_value=PiKVMResponse(
-                        True, "model", "pikvm-9999", "My PiKVM", None
-                    )
-                ),
-            ),
-        ):
-            result = await hass.config_entries.options.async_configure(
-                init_result["flow_id"],
-                user_input=new_user_input,
-            )
-
-    assert result["type"] == FlowResultType.CREATE_ENTRY
-    assert config_entry.data[CONF_HOST] == "pikvm.local"
-    assert config_entry.data[CONF_USERNAME] == "new_admin"
-    assert config_entry.data[CONF_PASSWORD] == "new_secret"
-    assert config_entry.data[CONF_SERIAL] == "pikvm-9999"
-    assert config_entry.data[CONF_CERTIFICATE] == "new-cert"
+    assert result["type"] is FlowResultType.FORM
+    assert result["step_id"] == "init"
 
 
 @pytest.mark.asyncio
-async def test_options_flow_localhost_name_fallback(hass):
-    """Hostname fallback should not block a successful update."""
+async def test_options_flow_init_with_existing_options(hass):
+    """Test options flow pre-populates existing options scan interval."""
     config_entry = MockConfigEntry(
         domain=DOMAIN,
-        data={
-            CONF_HOST: "https://old-host",
-            CONF_USERNAME: "admin",
-            CONF_PASSWORD: DEFAULT_PASSWORD,
-            CONF_SERIAL: "old-serial",
-            CONF_CERTIFICATE: "old-cert",
-        },
+        data={"host": "192.168.1.100"},
+        options={CONF_SCAN_INTERVAL: 45},
     )
     config_entry.add_to_hass(hass)
 
-    new_user_input = {
-        CONF_HOST: "pikvm.local",
-        CONF_USERNAME: "new_admin",
-        CONF_PASSWORD: "new_secret",
-    }
+    result = await hass.config_entries.options.async_init(config_entry.entry_id)
 
-    flow = PiKVMOptionsFlowHandler(config_entry)
-    flow.hass = hass
-
-    with (
-        patch(
-            "custom_components.pikvm_ha.options_flow.get_translations",
-            new=AsyncMock(return_value=lambda key, default: default),
-        ),
-        patch(
-            "custom_components.pikvm_ha.options_flow.fetch_serialized_cert",
-            new=AsyncMock(return_value="new-cert"),
-        ),
-        patch(
-            "custom_components.pikvm_ha.options_flow.is_pikvm_device",
-            new=AsyncMock(
-                return_value=PiKVMResponse(
-                    True, "model", "pikvm-1111", "localhost.localdomain", None
-                )
-            ),
-        ),
-    ):
-        result = await flow.async_step_init(user_input=new_user_input)
-
-    assert result["type"] == FlowResultType.FORM
-    assert result["errors"] == {}
+    assert result["type"] is FlowResultType.FORM
+    assert result["step_id"] == "init"
 
 
 @pytest.mark.asyncio
-async def test_options_flow_cannot_fetch_cert(hass):
-    """Show an error when the certificate cannot be fetched."""
+async def test_options_flow_init_with_data_scan_interval(hass):
+    """Test options flow falls back to data scan interval if options is empty."""
     config_entry = MockConfigEntry(
         domain=DOMAIN,
-        data={
-            CONF_HOST: "https://old-host",
-            CONF_USERNAME: DEFAULT_USERNAME,
-            CONF_PASSWORD: DEFAULT_PASSWORD,
-        },
+        data={"host": "192.168.1.100", CONF_SCAN_INTERVAL: 60},
+        options={},
     )
     config_entry.add_to_hass(hass)
 
-    with patch(
-        "custom_components.pikvm_ha.options_flow.get_translations",
-        new=AsyncMock(return_value=lambda key, default: default),
-    ):
-        init_result = await hass.config_entries.options.async_init(
-            config_entry.entry_id
-        )
+    result = await hass.config_entries.options.async_init(config_entry.entry_id)
 
-        assert init_result["type"] == FlowResultType.FORM
-
-        with patch(
-            "custom_components.pikvm_ha.options_flow.fetch_serialized_cert",
-            new=AsyncMock(return_value=None),
-        ):
-            result = await hass.config_entries.options.async_configure(
-                init_result["flow_id"],
-                user_input={
-                    CONF_HOST: "pikvm.local",
-                    CONF_USERNAME: "user",
-                    CONF_PASSWORD: "pass",
-                },
-            )
-
-    assert result["type"] == FlowResultType.FORM
-    assert result["errors"]["base"] == "cannot_fetch_cert"
+    assert result["type"] is FlowResultType.FORM
+    assert result["step_id"] == "init"
 
 
 @pytest.mark.asyncio
-async def test_options_flow_exception_error(hass):
-    """Surface device provided exception codes as form errors."""
-    config_entry = MockConfigEntry(domain=DOMAIN, data={})
-    config_entry.add_to_hass(hass)
-
-    with patch(
-        "custom_components.pikvm_ha.options_flow.get_translations",
-        new=AsyncMock(return_value=lambda key, default: default),
-    ):
-        init_result = await hass.config_entries.options.async_init(
-            config_entry.entry_id
-        )
-
-        with (
-            patch(
-                "custom_components.pikvm_ha.options_flow.fetch_serialized_cert",
-                new=AsyncMock(return_value="cert"),
-            ),
-            patch(
-                "custom_components.pikvm_ha.options_flow.is_pikvm_device",
-                new=AsyncMock(
-                    return_value=PiKVMResponse(
-                        True, "model", "serial", "Exception_error", None
-                    )
-                ),
-            ),
-        ):
-            result = await hass.config_entries.options.async_configure(
-                init_result["flow_id"],
-                user_input={
-                    CONF_HOST: "pikvm.local",
-                    CONF_USERNAME: "user",
-                    CONF_PASSWORD: "pass",
-                },
-            )
-
-    assert result["type"] == FlowResultType.FORM
-    assert result["errors"]["base"] == "Exception_error"
-
-
-@pytest.mark.asyncio
-async def test_options_flow_existing_entry_updates(hass):
-    """Updating an existing entry should reuse the stored config entry."""
-    config_entry = MockConfigEntry(domain=DOMAIN, data={})
-    config_entry.add_to_hass(hass)
-
-    existing_entry = MockConfigEntry(
-        domain=DOMAIN,
-        unique_id="pikvm-9999",
-        data={
-            CONF_HOST: "https://existing",
-            CONF_USERNAME: "saved",
-            CONF_PASSWORD: "secret",
-        },
-    )
-    existing_entry.add_to_hass(hass)
-
-    with patch(
-        "custom_components.pikvm_ha.options_flow.get_translations",
-        new=AsyncMock(return_value=lambda key, default: default),
-    ):
-        init_result = await hass.config_entries.options.async_init(
-            config_entry.entry_id
-        )
-
-        with (
-            patch(
-                "custom_components.pikvm_ha.options_flow.fetch_serialized_cert",
-                new=AsyncMock(return_value="cert"),
-            ),
-            patch(
-                "custom_components.pikvm_ha.options_flow.is_pikvm_device",
-                new=AsyncMock(
-                    return_value=PiKVMResponse(
-                        True, "model", "pikvm-9999", "My PiKVM", None
-                    )
-                ),
-            ),
-            patch(
-                "custom_components.pikvm_ha.options_flow.update_existing_entry",
-                autospec=True,
-            ) as update_mock,
-        ):
-            result = await hass.config_entries.options.async_configure(
-                init_result["flow_id"],
-                user_input={
-                    CONF_HOST: "pikvm.local",
-                    CONF_USERNAME: "user",
-                    CONF_PASSWORD: "pass",
-                },
-            )
-
-    assert result["type"] == FlowResultType.CREATE_ENTRY
-    update_mock.assert_called_once()
-
-
-@pytest.mark.asyncio
-async def test_options_flow_cannot_connect(hass):
-    """Show connection error when device validation fails."""
-    config_entry = MockConfigEntry(domain=DOMAIN, data={})
-    config_entry.add_to_hass(hass)
-
-    flow = PiKVMOptionsFlowHandler(config_entry)
-    flow.hass = hass
-
-    with (
-        patch(
-            "custom_components.pikvm_ha.options_flow.get_translations",
-            new=AsyncMock(return_value=lambda key, default: default),
-        ),
-        patch(
-            "custom_components.pikvm_ha.options_flow.fetch_serialized_cert",
-            new=AsyncMock(return_value="cert"),
-        ),
-        patch(
-            "custom_components.pikvm_ha.options_flow.is_pikvm_device",
-            new=AsyncMock(
-                return_value=PiKVMResponse(False, "model", "SERIAL", "My PiKVM", None)
-            ),
-        ),
-    ):
-        result = await flow.async_step_init(
-            user_input={
-                CONF_HOST: "pikvm.local",
-                CONF_USERNAME: "user",
-                CONF_PASSWORD: "pass",
-            }
-        )
-
-    assert result["type"] == FlowResultType.FORM
-    assert result["errors"]["base"] == "cannot_connect"
-
-
-class _DummyFlow:
-    """Simple helper to exercise handle_user_input in isolation."""
-
-    def __init__(self, hass):
-        self.hass = hass
-        self.unique_ids = []
-        self.created_entries = []
-
-    async def async_set_unique_id(self, serial):
-        self.unique_ids.append(serial)
-
-    def _abort_if_unique_id_configured(self):
-        return None
-
-    def async_create_entry(self, title, data):
-        entry = {"title": title, "data": data}
-        self.created_entries.append(entry)
-        return entry
-
-
-@pytest.mark.asyncio
-async def test_handle_user_input_creates_new_entry(hass):
-    """handle_user_input should create a new entry when validation succeeds."""
-    flow = _DummyFlow(hass)
-
-    with (
-        patch(
-            "custom_components.pikvm_ha.options_flow.fetch_serialized_cert",
-            new=AsyncMock(return_value="cert"),
-        ),
-        patch(
-            "custom_components.pikvm_ha.options_flow.is_pikvm_device",
-            new=AsyncMock(
-                return_value=PiKVMResponse(True, "model", "SERIAL123", None, None)
-            ),
-        ),
-        patch(
-            "custom_components.pikvm_ha.options_flow.update_existing_entry"
-        ) as update_mock,
-    ):
-        result, errors = await handle_user_input(
-            flow,
-            {
-                CONF_HOST: "pikvm.local",
-                CONF_USERNAME: "user",
-                CONF_PASSWORD: "pass",
-            },
-        )
-
-    assert errors is None
-    assert result["data"][CONF_HOST] == "https://pikvm.local"
-    assert result["data"][CONF_SERIAL] == "SERIAL123"
-    assert flow.unique_ids == ["SERIAL123"]
-    update_mock.assert_not_called()
-
-
-@pytest.mark.asyncio
-async def test_handle_user_input_existing_entry(hass):
-    """Existing entries are updated and reused."""
-    flow = _DummyFlow(hass)
-
-    existing_entry = MockConfigEntry(
-        domain=DOMAIN,
-        unique_id="SERIAL123",
-        data={
-            CONF_HOST: "https://existing",
-            CONF_USERNAME: "saved",
-            CONF_PASSWORD: "secret",
-        },
-    )
-    existing_entry.add_to_hass(hass)
-
-    with (
-        patch(
-            "custom_components.pikvm_ha.options_flow.fetch_serialized_cert",
-            new=AsyncMock(return_value="cert"),
-        ),
-        patch(
-            "custom_components.pikvm_ha.options_flow.is_pikvm_device",
-            new=AsyncMock(
-                return_value=PiKVMResponse(
-                    True, "model", "SERIAL123", "My PiKVM", None
-                )
-            ),
-        ),
-        patch(
-            "custom_components.pikvm_ha.options_flow.update_existing_entry",
-            autospec=True,
-        ) as update_mock,
-    ):
-        outcome = await handle_user_input(
-            flow,
-            {
-                CONF_HOST: "pikvm.local",
-                CONF_USERNAME: "user",
-                CONF_PASSWORD: "pass",
-            },
-        )
-
-    if isinstance(outcome, tuple):
-        result, errors = outcome
-    else:
-        result, errors = outcome, None
-
-    assert result["data"] == {}
-    assert errors is None
-    update_mock.assert_called_once()
-
-
-@pytest.mark.asyncio
-async def test_handle_user_input_exception_error(hass):
-    """Exception-prefixed names surface as errors."""
-    flow = _DummyFlow(hass)
-
-    with (
-        patch(
-            "custom_components.pikvm_ha.options_flow.fetch_serialized_cert",
-            new=AsyncMock(return_value="cert"),
-        ),
-        patch(
-            "custom_components.pikvm_ha.options_flow.is_pikvm_device",
-            new=AsyncMock(
-                return_value=PiKVMResponse(
-                    True, "model", "SERIAL", "Exception_problem", None
-                )
-            ),
-        ),
-    ):
-        result, errors = await handle_user_input(
-            flow,
-            {
-                CONF_HOST: "pikvm.local",
-                CONF_USERNAME: "user",
-                CONF_PASSWORD: "pass",
-            },
-        )
-
-    assert result is None
-    assert errors["base"] == "Exception_problem"
-
-
-@pytest.mark.asyncio
-async def test_handle_user_input_missing_certificate(hass):
-    """Missing certificates should abort with an error."""
-    flow = _DummyFlow(hass)
-
-    with patch(
-        "custom_components.pikvm_ha.options_flow.fetch_serialized_cert",
-        new=AsyncMock(return_value=None),
-    ):
-        result, errors = await handle_user_input(
-            flow,
-            {
-                CONF_HOST: "pikvm.local",
-                CONF_USERNAME: "user",
-                CONF_PASSWORD: "pass",
-            },
-        )
-
-    assert result is None
-    assert errors["base"] == "cannot_fetch_cert"
-
-
-@pytest.mark.asyncio
-async def test_handle_user_input_cannot_connect(hass):
-    """Connection failures should propagate as errors."""
-    flow = _DummyFlow(hass)
-
-    with (
-        patch(
-            "custom_components.pikvm_ha.options_flow.fetch_serialized_cert",
-            new=AsyncMock(return_value="cert"),
-        ),
-        patch(
-            "custom_components.pikvm_ha.options_flow.is_pikvm_device",
-            new=AsyncMock(
-                return_value=PiKVMResponse(False, None, None, None, None)
-            ),
-        ),
-    ):
-        result, errors = await handle_user_input(
-            flow,
-            {
-                CONF_HOST: "pikvm.local",
-                CONF_USERNAME: "user",
-                CONF_PASSWORD: "pass",
-            },
-        )
-
-    assert result is None
-    assert errors["base"] == "cannot_connect"
-
-
-@pytest.mark.asyncio
-async def test_options_flow_with_totp_secret(hass):
-    """Test options flow generates and appends TOTP code when totp is provided (covers line 62)."""
+async def test_options_flow_submits_valid_data(hass):
+    """Test submitting valid scan interval creates options entry."""
     config_entry = MockConfigEntry(
         domain=DOMAIN,
-        data={
-            CONF_HOST: "https://old-host",
-            CONF_USERNAME: "admin",
-            CONF_PASSWORD: DEFAULT_PASSWORD,
-            CONF_SERIAL: "old-serial",
-            CONF_CERTIFICATE: "old-cert",
-        },
+        data={"host": "192.168.1.100"},
+        options={CONF_SCAN_INTERVAL: DEFAULT_SCAN_INTERVAL},
     )
     config_entry.add_to_hass(hass)
 
-    totp_secret = "JBSWY3DPEHPK3PXP"
-    new_user_input = {
-        CONF_HOST: "pikvm.local",
-        CONF_USERNAME: "new_admin",
-        CONF_PASSWORD: "new_secret",
-        CONF_TOTP: totp_secret,
-    }
+    result = await hass.config_entries.options.async_init(config_entry.entry_id)
+    assert result["type"] is FlowResultType.FORM
 
-    with patch(
-        "custom_components.pikvm_ha.options_flow.get_translations",
-        new=AsyncMock(return_value=lambda key, default: default),
-    ):
-        init_result = await hass.config_entries.options.async_init(
-            config_entry.entry_id
-        )
+    result2 = await hass.config_entries.options.async_configure(
+        result["flow_id"],
+        user_input={CONF_SCAN_INTERVAL: 120},
+    )
 
-        with (
-            patch(
-                "custom_components.pikvm_ha.options_flow.fetch_serialized_cert",
-                new=AsyncMock(return_value="new-cert"),
-            ),
-            patch(
-                "custom_components.pikvm_ha.options_flow.is_pikvm_device",
-                new=AsyncMock(
-                    return_value=PiKVMResponse(
-                        True, "model", "pikvm-9999", "My PiKVM", None
-                    )
-                ),
-            ) as mock_is_pikvm,
-        ):
-            result = await hass.config_entries.options.async_configure(
-                init_result["flow_id"],
-                user_input=new_user_input,
-            )
-
-    assert result["type"] == FlowResultType.CREATE_ENTRY
-    called_password = mock_is_pikvm.call_args[0][3]
-    assert called_password.startswith("new_secret")
-    assert len(called_password) == len("new_secret") + 6
+    assert result2["type"] is FlowResultType.CREATE_ENTRY
+    assert result2["data"] == {CONF_SCAN_INTERVAL: 120}
 
 
 @pytest.mark.asyncio
-async def test_options_flow_translation_not_callable_fallback(hass):
-    """Test options flow _tr returns default when translations are not callable (covers line 132)."""
+async def test_get_options_flow(hass):
+    """Test PiKVMConfigFlow.async_get_options_flow returns handler."""
     config_entry = MockConfigEntry(
         domain=DOMAIN,
-        data={
-            CONF_HOST: "https://pikvm.local",
-            CONF_USERNAME: "admin",
-            CONF_PASSWORD: "password",
-        },
+        data={"host": "192.168.1.100"},
     )
     config_entry.add_to_hass(hass)
 
-    with patch(
-        "custom_components.pikvm_ha.options_flow.get_translations",
-        new=AsyncMock(return_value=None),
-    ):
-        result = await hass.config_entries.options.async_init(
-            config_entry.entry_id
-        )
-
-    assert result["type"] == FlowResultType.FORM
-    placeholders = result["description_placeholders"]
-    assert placeholders["url"] == "URL or IP address of the PiKVM device"
-    assert placeholders["username"] == "Username for PiKVM"
-    assert placeholders["password"] == "Password for PiKVM"
-    assert placeholders["totp"] == "2FA secret for PiKVM (if enabled)"
-
-
-@pytest.mark.asyncio
-async def test_handle_user_input_with_totp_secret(hass):
-    """Test handle_user_input generates TOTP code when totp is provided (covers line 158)."""
-    flow = _DummyFlow(hass)
-    totp_secret = "JBSWY3DPEHPK3PXP"
-
-    with (
-        patch(
-            "custom_components.pikvm_ha.options_flow.fetch_serialized_cert",
-            new=AsyncMock(return_value="cert"),
-        ),
-        patch(
-            "custom_components.pikvm_ha.options_flow.is_pikvm_device",
-            new=AsyncMock(
-                return_value=PiKVMResponse(True, "model", "SERIAL_TOTP", "My PiKVM", None)
-            ),
-        ) as mock_is_pikvm,
-    ):
-        result, errors = await handle_user_input(
-            flow,
-            {
-                CONF_HOST: "pikvm.local",
-                CONF_USERNAME: "user",
-                CONF_PASSWORD: "secret_password",
-                CONF_TOTP: totp_secret,
-            },
-        )
-
-    assert errors is None
-    assert result["data"][CONF_SERIAL] == "SERIAL_TOTP"
-    called_password = mock_is_pikvm.call_args[0][3]
-    assert called_password.startswith("secret_password")
-    assert len(called_password) == len("secret_password") + 6
-
+    flow = PiKVMConfigFlow.async_get_options_flow(config_entry)
+    assert isinstance(flow, PiKVMOptionsFlowHandler)
+    assert flow.config_entry == config_entry

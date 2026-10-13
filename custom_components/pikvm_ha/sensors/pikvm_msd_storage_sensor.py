@@ -1,9 +1,13 @@
 """Support for PiKVM MSD storage sensor."""
 
+from __future__ import annotations
+
 import logging
 
-from ..sensor import PiKVMBaseSensor
-from ..utils import get_nested_value, bytes_to_mb
+from homeassistant.const import PERCENTAGE
+
+from ..sensor import MSD_STORAGE_SENSOR_DESCRIPTION, PiKVMBaseSensor
+from ..utils import bytes_to_mb, get_nested_value
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -19,12 +23,14 @@ class PiKVMSDStorageSensor(PiKVMBaseSensor):
             unique_id_base,
             "msd_storage",
             name,
-            "%",
+            PERCENTAGE,
             "mdi:database",
+            description=MSD_STORAGE_SENSOR_DESCRIPTION,
         )
 
     @property
-    def state(self):
+    def native_value(self):
+        """Return the native value of the sensor."""
         storage = get_nested_value(self.coordinator.data, ["msd", "storage"], {})
         total = storage.get("total")
         available = storage.get("available")
@@ -33,6 +39,11 @@ class PiKVMSDStorageSensor(PiKVMBaseSensor):
             return None
         used = total - available
         return round((used / total) * 100, 2)
+
+    @property
+    def state(self):
+        """Return the state of the sensor."""
+        return self.native_value
 
     @property
     def extra_state_attributes(self):

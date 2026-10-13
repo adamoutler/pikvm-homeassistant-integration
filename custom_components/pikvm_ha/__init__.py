@@ -6,11 +6,14 @@ import logging
 import voluptuous as vol
 
 from homeassistant.config_entries import ConfigEntry
+from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
 import homeassistant.helpers.config_validation as cv
 from homeassistant.helpers import device_registry as dr, entity_registry as er
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.typing import ConfigType
+
+PLATFORMS: list[Platform] = [Platform.SENSOR, Platform.BINARY_SENSOR]
 
 from pikvm_aio import format_url, parse_host_port
 from .const import (
@@ -107,6 +110,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     await coordinator.async_setup()
     await coordinator.async_config_entry_first_refresh()
 
+    entry.runtime_data = coordinator
     hass.data[DOMAIN][entry.entry_id] = coordinator
 
     # Retrieve hardware and system information safely
@@ -160,8 +164,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         if dev.name_by_user is None and dev.name != device_name:
             dev_reg.async_update_device(dev.id, name=device_name)
 
-    # Forward the setup to the sensor platform
-    await hass.config_entries.async_forward_entry_setups(entry, ["sensor"])
+    # Forward the setup to sensor and binary_sensor platforms
+    await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
 
     # Clean up orphaned devices that were created by previous versions
     await _async_cleanup_devices(hass, entry)
@@ -193,10 +197,11 @@ async def _async_cleanup_devices(hass: HomeAssistant, entry: ConfigEntry) -> Non
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Unload a config entry."""
-    await hass.config_entries.async_forward_entry_unload(entry, "sensor")
-    hass.data[DOMAIN].pop(entry.entry_id, None)
+    unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
+    if unload_ok:
+        hass.data[DOMAIN].pop(entry.entry_id, None)
 
-    return True
+    return unload_ok
 
 
 async def update_listener(hass: HomeAssistant, entry: ConfigEntry) -> None:
@@ -206,8 +211,8 @@ async def update_listener(hass: HomeAssistant, entry: ConfigEntry) -> None:
 
 async def async_remove_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
     """Handle removal of a config entry."""
-    # Forward the entry removal signal to the 'sensor' component
-    await hass.config_entries.async_forward_entry_unload(entry, "sensor")
+    # Forward the entry removal signal to platforms
+    await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
 
     # Remove the entry from the 'pikvm' domain data
     hass.data[DOMAIN].pop(entry.entry_id, None)

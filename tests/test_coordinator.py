@@ -1,9 +1,12 @@
 """Tests for the PiKVM DataUpdateCoordinator."""
 
+from datetime import timedelta
 from unittest.mock import AsyncMock, patch
 import pytest
 
+from homeassistant.const import CONF_SCAN_INTERVAL
 from homeassistant.exceptions import ConfigEntryAuthFailed
+from homeassistant.helpers import issue_registry as ir
 from homeassistant.helpers.update_coordinator import UpdateFailed
 from pikvm_aio import (
     PiKVMAuthenticationError,
@@ -13,7 +16,9 @@ from pikvm_aio import (
     PiKVMError,
     PiKVMTimeoutError,
 )
+from pytest_homeassistant_custom_component.common import MockConfigEntry
 
+from custom_components.pikvm_ha.const import DOMAIN
 from custom_components.pikvm_ha.coordinator import PiKVMDataUpdateCoordinator
 
 
@@ -143,4 +148,372 @@ async def test_coordinator_parse_host_port_exception(hass):
             cert="",
         )
         assert coordinator.clean_host == "pikvm-custom.local:8443"
+
+
+@pytest.mark.asyncio
+async def test_coordinator_init_scan_interval_from_entry_options(hass):
+    """Test coordinator uses scan interval from entry options and populates ssl_cert."""
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        options={CONF_SCAN_INTERVAL: 15},
+        data={CONF_SCAN_INTERVAL: 60},
+    )
+    coordinator = PiKVMDataUpdateCoordinator(
+        hass=hass,
+        url="https://pikvm.local",
+        username="admin",
+        password="password",
+        totp="",
+        cert="dummy_cert_pem",
+        entry=entry,
+    )
+    assert coordinator.update_interval == timedelta(seconds=15)
+    assert coordinator.config_entry == entry
+    assert coordinator.client.ssl_cert == "dummy_cert_pem"
+
+
+@pytest.mark.asyncio
+async def test_coordinator_init_scan_interval_from_entry_data(hass):
+    """Test coordinator uses scan interval from entry data when options is empty."""
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        options={},
+        data={CONF_SCAN_INTERVAL: 45},
+    )
+    coordinator = PiKVMDataUpdateCoordinator(
+        hass=hass,
+        url="https://pikvm.local",
+        username="admin",
+        password="password",
+        totp="",
+        cert="",
+        entry=entry,
+    )
+    assert coordinator.update_interval == timedelta(seconds=45)
+
+
+@pytest.mark.asyncio
+async def test_coordinator_init_scan_interval_default(hass):
+    """Test coordinator uses default scan interval when not in entry options or data."""
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        options={},
+        data={},
+    )
+    coordinator = PiKVMDataUpdateCoordinator(
+        hass=hass,
+        url="https://pikvm.local",
+        username="admin",
+        password="password",
+        totp="",
+        cert="",
+        entry=entry,
+    )
+    assert coordinator.update_interval == timedelta(seconds=30)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "throttling_data",
+    [
+        {"voltage": {"core": {"now": True}}},
+        {"raw_flags": 0x1},
+        {"text_flags": ["under-voltage"]},
+    ],
+)
+async def test_coordinator_hardware_health_undervoltage_critical(hass, throttling_data):
+    """Test undervoltage issue created with CRITICAL severity when active now."""
+    entry = MockConfigEntry(domain=DOMAIN, entry_id="test_entry_uv_now")
+    entry.add_to_hass(hass)
+    coordinator = PiKVMDataUpdateCoordinator(
+        hass=hass,
+        url="https://pikvm.local",
+        username="admin",
+        password="password",
+        totp="",
+        cert="",
+        entry=entry,
+    )
+
+    data = {
+        "hw": {
+            "health": {
+                "throttling": throttling_data,
+            }
+        }
+    }
+
+    coordinator._async_check_hardware_health(data)
+
+    issue_registry = ir.async_get(hass)
+    issue = issue_registry.async_get_issue(DOMAIN, f"undervoltage_{entry.entry_id}")
+    assert issue is not None
+    assert issue.severity == ir.IssueSeverity.CRITICAL
+    assert issue.translation_key == "undervoltage"
+    assert issue.translation_placeholders == {"device_name": "pikvm.local"}
+    assert issue.learn_more_url == "https://docs.pikvm.org/power/"
+    assert issue.is_fixable is False
+    assert issue.is_persistent is False
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "throttling_data",
+    [
+        {"voltage": {"core": {"now": False, "past": True}}},
+        {"raw_flags": 0x10000},
+    ],
+)
+async def test_coordinator_hardware_health_undervoltage_warning_past(hass, throttling_data):
+    """Test undervoltage issue created with WARNING severity when occurred in the past."""
+    entry = MockConfigEntry(domain=DOMAIN, entry_id="test_entry_uv_past")
+    entry.add_to_hass(hass)
+    coordinator = PiKVMDataUpdateCoordinator(
+        hass=hass,
+        url="https://pikvm.local",
+        username="admin",
+        password="password",
+        totp="",
+        cert="",
+        entry=entry,
+    )
+
+    data = {
+        "hw": {
+            "health": {
+                "throttling": throttling_data,
+            }
+        }
+    }
+
+    coordinator._async_check_hardware_health(data)
+
+    issue_registry = ir.async_get(hass)
+    issue = issue_registry.async_get_issue(DOMAIN, f"undervoltage_{entry.entry_id}")
+    assert issue is not None
+    assert issue.severity == ir.IssueSeverity.WARNING
+    assert issue.translation_key == "undervoltage"
+    assert issue.translation_placeholders == {"device_name": "pikvm.local"}
+    assert issue.learn_more_url == "https://docs.pikvm.org/power/"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "throttling_data",
+    [
+        {"raw_flags": 0x2},
+        {"raw_flags": 0x4},
+        {"text_flags": ["throttled"]},
+        {"text_flags": ["arm-frequency-capped"]},
+        {"raw_flags": 0x20000},
+        {"raw_flags": 0x40000},
+    ],
+)
+async def test_coordinator_hardware_health_throttling_issue_creation(hass, throttling_data):
+    """Test throttling issue created with WARNING severity for active or past throttling."""
+    entry = MockConfigEntry(domain=DOMAIN, entry_id="test_entry_throttle")
+    entry.add_to_hass(hass)
+    coordinator = PiKVMDataUpdateCoordinator(
+        hass=hass,
+        url="https://pikvm.local",
+        username="admin",
+        password="password",
+        totp="",
+        cert="",
+        entry=entry,
+    )
+
+    data = {
+        "hw": {
+            "health": {
+                "throttling": throttling_data,
+            }
+        }
+    }
+
+    coordinator._async_check_hardware_health(data)
+
+    issue_registry = ir.async_get(hass)
+    issue = issue_registry.async_get_issue(DOMAIN, f"throttling_{entry.entry_id}")
+    assert issue is not None
+    assert issue.severity == ir.IssueSeverity.WARNING
+    assert issue.translation_key == "throttling"
+    assert issue.translation_placeholders == {"device_name": "pikvm.local"}
+    assert issue.learn_more_url == "https://docs.pikvm.org/"
+    assert issue.is_fixable is False
+    assert issue.is_persistent is False
+
+
+@pytest.mark.asyncio
+async def test_coordinator_hardware_health_issue_deletion(hass):
+    """Test existing undervoltage and throttling issues are removed when health recovers."""
+    entry = MockConfigEntry(domain=DOMAIN, entry_id="test_entry_recovery")
+    entry.add_to_hass(hass)
+    coordinator = PiKVMDataUpdateCoordinator(
+        hass=hass,
+        url="https://pikvm.local",
+        username="admin",
+        password="password",
+        totp="",
+        cert="",
+        entry=entry,
+    )
+
+    # 1. Trigger issues
+    unhealthy_data = {
+        "hw": {
+            "health": {
+                "throttling": {
+                    "voltage": {"core": {"now": True}},
+                    "text_flags": ["throttled"],
+                }
+            }
+        }
+    }
+    coordinator._async_check_hardware_health(unhealthy_data)
+
+    issue_registry = ir.async_get(hass)
+    assert issue_registry.async_get_issue(DOMAIN, f"undervoltage_{entry.entry_id}") is not None
+    assert issue_registry.async_get_issue(DOMAIN, f"throttling_{entry.entry_id}") is not None
+
+    # 2. Recover: clear flags and voltages
+    healthy_data = {
+        "hw": {
+            "health": {
+                "throttling": {
+                    "raw_flags": 0,
+                    "text_flags": [],
+                    "voltage": {"core": {"now": False, "past": False}},
+                }
+            }
+        }
+    }
+    coordinator._async_check_hardware_health(healthy_data)
+
+    # 3. Assert deleted
+    assert issue_registry.async_get_issue(DOMAIN, f"undervoltage_{entry.entry_id}") is None
+    assert issue_registry.async_get_issue(DOMAIN, f"throttling_{entry.entry_id}") is None
+
+
+@pytest.mark.asyncio
+async def test_coordinator_hardware_health_empty_entry_id(hass):
+    """Test _async_check_hardware_health returns early when entry_id is empty."""
+    coordinator = PiKVMDataUpdateCoordinator(
+        hass=hass,
+        url="https://pikvm.local",
+        username="admin",
+        password="password",
+        totp="",
+        cert="",
+        entry=None,
+    )
+    coordinator.clean_host = ""
+
+    unhealthy_data = {
+        "hw": {
+            "health": {
+                "throttling": {
+                    "voltage": {"core": {"now": True}},
+                    "text_flags": ["throttled"],
+                }
+            }
+        }
+    }
+
+    with patch("custom_components.pikvm_ha.coordinator.async_create_issue") as mock_create_issue, patch(
+        "custom_components.pikvm_ha.coordinator.async_delete_issue"
+    ) as mock_delete_issue:
+        coordinator._async_check_hardware_health(unhealthy_data)
+        mock_create_issue.assert_not_called()
+        mock_delete_issue.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_coordinator_hardware_health_no_config_entry_uses_clean_host(hass):
+    """Test _async_check_hardware_health uses clean_host when config_entry is None."""
+    coordinator = PiKVMDataUpdateCoordinator(
+        hass=hass,
+        url="https://pikvm.local",
+        username="admin",
+        password="password",
+        totp="",
+        cert="",
+        entry=None,
+    )
+
+    unhealthy_data = {
+        "hw": {
+            "health": {
+                "throttling": {
+                    "voltage": {"core": {"now": True}},
+                }
+            }
+        }
+    }
+    coordinator._async_check_hardware_health(unhealthy_data)
+
+    issue_registry = ir.async_get(hass)
+    issue = issue_registry.async_get_issue(DOMAIN, "undervoltage_pikvm.local")
+    assert issue is not None
+    assert issue.severity == ir.IssueSeverity.CRITICAL
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("invalid_data", [None, "invalid_string", 12345])
+async def test_coordinator_hardware_health_non_dict_fallback(hass, invalid_data):
+    """Test _async_check_hardware_health gracefully handles non-dict data without .raw attribute."""
+    coordinator = PiKVMDataUpdateCoordinator(
+        hass=hass,
+        url="https://pikvm.local",
+        username="admin",
+        password="password",
+        totp="",
+        cert="",
+        entry=None,
+    )
+
+    coordinator._async_check_hardware_health(invalid_data)
+
+    issue_registry = ir.async_get(hass)
+    assert issue_registry.async_get_issue(DOMAIN, "undervoltage_pikvm.local") is None
+    assert issue_registry.async_get_issue(DOMAIN, "throttling_pikvm.local") is None
+
+
+@pytest.mark.asyncio
+async def test_coordinator_update_data_triggers_hardware_health(hass):
+    """Test _async_update_data invokes _async_check_hardware_health during polling."""
+    entry = MockConfigEntry(domain=DOMAIN, entry_id="test_update_health")
+    entry.add_to_hass(hass)
+    coordinator = PiKVMDataUpdateCoordinator(
+        hass=hass,
+        url="https://pikvm.local",
+        username="admin",
+        password="password",
+        totp="",
+        cert="",
+        entry=entry,
+    )
+
+    unhealthy_info = PiKVMDeviceInfo.from_dict({
+        "hw": {
+            "platform": {"type": "v3", "serial": "sn123"},
+            "health": {
+                "throttling": {
+                    "text_flags": ["under-voltage", "throttled"],
+                }
+            },
+        },
+        "system": {"kvmd": {"version": "3.1"}},
+        "meta": {"server": {"name": "PiKVM", "host": "pikvm.local"}},
+    })
+
+    coordinator.client.get_info = AsyncMock(return_value=unhealthy_info)
+
+    data = await coordinator._async_update_data()
+    assert data == unhealthy_info
+
+    issue_registry = ir.async_get(hass)
+    assert issue_registry.async_get_issue(DOMAIN, f"undervoltage_{entry.entry_id}") is not None
+    assert issue_registry.async_get_issue(DOMAIN, f"throttling_{entry.entry_id}") is not None
+
 

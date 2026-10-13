@@ -69,6 +69,77 @@ Once configured, the integration will create a device for your PiKVM with severa
 *   **MSD Storage**: Shows the available storage space on the Mass Storage Drive.
 *   **Extra Sensors**: The integration will also create sensors for any configured "extras" on your PiKVM, such as IPMI, Janus, VNC, or Webterm services, showing their current status.
 
+## Supported Devices
+
+This integration communicates directly with the KVMD REST API and supports all official and DIY PiKVM hardware platforms running KVMD:
+*   **PiKVM V4 Plus**
+*   **PiKVM V4 Mini**
+*   **PiKVM V3 (HAT for Raspberry Pi 4)**
+*   **PiKVM V2 (DIY with Raspberry Pi 4 or Raspberry Pi Zero 2 W)**
+*   **Custom / Embedded Linux systems running `kvmd`**
+
+## Data Updates
+
+*   **Update Mechanism:** Local REST polling over secure HTTPS.
+*   **Default Polling Interval:** 30 seconds.
+*   **Configurability:** The polling frequency can be adjusted via integration Options (5 to 300 seconds).
+
+## Reconfiguration & Options
+
+*   **Reconfiguration:** If your PiKVM's IP address, credentials, or 2FA secret change, navigate to **Settings** > **Devices & Services** > **PiKVM**, click the three-dots menu on the entry, and select **Reconfigure**.
+*   **Options Flow:** Click **Configure** on the PiKVM card in Home Assistant to adjust runtime settings such as the polling scan interval.
+
+## Practical Use Cases & Automation Examples
+
+### 1. Alert on PiKVM Throttling or Undervoltage
+PiKVM devices will report hardware throttling when operating under inadequate power or excessive heat. You can configure an automation to receive instant alerts:
+
+```yaml
+automation:
+  - alias: "PiKVM Hardware Throttling Alert"
+    trigger:
+      - platform: state
+        entity_id: binary_sensor.pikvm_throttling
+        to: "on"
+    action:
+      - service: notify.persistent_notification
+        data:
+          title: "PiKVM Power/Thermal Alert"
+          message: "PiKVM is reporting hardware throttling! Check the 5V power supply and cooling."
+```
+
+### 2. PiKVM High CPU Temperature Alert
+```yaml
+automation:
+  - alias: "PiKVM CPU Temperature High"
+    trigger:
+      - platform: numeric_state
+        entity_id: sensor.pikvm_cpu_temp
+        above: 75
+        for:
+          minutes: 3
+    action:
+      - service: notify.notify
+        data:
+          title: "PiKVM Thermal Warning"
+          message: "PiKVM CPU temperature has exceeded 75°C for 3 minutes."
+```
+
+## Known Limitations
+
+*   **Read-Only Telemetry:** This integration monitors system telemetry and health metrics (CPU, RAM, Fan, MSD status, services). Server power button toggling and KVM console streaming remain accessible via the native PiKVM Web UI.
+*   **Self-Signed Certificates:** PiKVM generates self-signed TLS certificates by default. The integration securely inspects and pins the certificate upon setup.
+*   **IPv6 Zeroconf:** Network auto-discovery filters out non-routable link-local IPv6 addresses to prioritize your local IPv4 network address.
+
+## Removing the Integration
+
+To completely remove the PiKVM integration:
+1. Navigate to **Settings** > **Devices & Services**.
+2. Locate the **PiKVM** card or entry you wish to remove.
+3. Click the three-dots menu icon on the entry and select **Delete**.
+4. Confirm deletion. Home Assistant will automatically clean up all associated devices and entities.
+5. If installed via HACS and you wish to remove the code completely, go to **HACS** > **Integrations**, locate **PiKVM**, click the three dots, and choose **Remove**, followed by restarting Home Assistant.
+
 ## Troubleshooting
 
 If you encounter issues, please check the following common problems and solutions.

@@ -7,6 +7,7 @@ from homeassistant.helpers import device_registry as dr, entity_registry as er
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.pikvm_ha import (
+    PLATFORMS,
     _async_cleanup_devices,
     async_remove_entry,
     async_setup,
@@ -93,7 +94,7 @@ async def test_async_setup_entry_success(hass, pikvm_cert, mock_device_info):
         assert device_info["hw_version"] == "Raspberry Pi 4"
         assert device_info["sw_version"] == "3.100"
 
-        mock_forward.assert_awaited_once_with(entry, ["sensor"])
+        mock_forward.assert_awaited_once_with(entry, PLATFORMS)
 
 
 @pytest.mark.asyncio
@@ -180,12 +181,12 @@ async def test_async_unload_entry(hass):
     hass.data.setdefault(DOMAIN, {})[entry.entry_id] = "mock_coordinator"
 
     with patch.object(
-        hass.config_entries, "async_forward_entry_unload", new=AsyncMock(return_value=True)
+        hass.config_entries, "async_unload_platforms", new=AsyncMock(return_value=True)
     ) as mock_unload:
         result = await async_unload_entry(hass, entry)
         assert result is True
         assert entry.entry_id not in hass.data[DOMAIN]
-        mock_unload.assert_awaited_once_with(entry, "sensor")
+        mock_unload.assert_awaited_once_with(entry, PLATFORMS)
 
 
 @pytest.mark.asyncio
@@ -201,18 +202,18 @@ async def test_update_listener(hass):
 
 @pytest.mark.asyncio
 async def test_async_remove_entry(hass):
-    """Test async_remove_entry cleanly unloads sensor and clears domain data."""
+    """Test async_remove_entry cleanly unloads platforms and clears domain data."""
     entry = MockConfigEntry(domain=DOMAIN, entry_id="test_remove_entry", data={})
     entry.add_to_hass(hass)
 
     hass.data.setdefault(DOMAIN, {})[entry.entry_id] = "mock_coordinator"
 
     with patch.object(
-        hass.config_entries, "async_forward_entry_unload", new=AsyncMock(return_value=True)
+        hass.config_entries, "async_unload_platforms", new=AsyncMock(return_value=True)
     ) as mock_unload:
         await async_remove_entry(hass, entry)
         assert entry.entry_id not in hass.data[DOMAIN]
-        mock_unload.assert_awaited_once_with(entry, "sensor")
+        mock_unload.assert_awaited_once_with(entry, PLATFORMS)
 
 
 @pytest.mark.asyncio

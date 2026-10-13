@@ -1,10 +1,14 @@
 """Represents a sensor for monitoring memory utilization on a PiKVM device."""
 
+from __future__ import annotations
+
 import logging
 from typing import NamedTuple
 
-from .. import PiKVMDataUpdateCoordinator
-from ..sensor import PiKVMBaseSensor
+from homeassistant.const import PERCENTAGE
+
+from ..coordinator import PiKVMDataUpdateCoordinator
+from ..sensor import MEMORY_UTILIZATION_SENSOR_DESCRIPTION, PiKVMBaseSensor
 from ..utils import bytes_to_mb, get_nested_value
 
 _LOGGER = logging.getLogger(__name__)
@@ -21,7 +25,7 @@ class PiKVMResponse(NamedTuple):
 
 
 class PiKVMMemoryUtilizationSensor(PiKVMBaseSensor):
-    """Representation of a PiKVM CPU temperature sensor."""
+    """Representation of a PiKVM memory utilization sensor."""
 
     def __init__(
         self,
@@ -36,26 +40,34 @@ class PiKVMMemoryUtilizationSensor(PiKVMBaseSensor):
             unique_id_base,
             "memory_utilization",
             name,
-            "%",
+            PERCENTAGE,
             "mdi:memory",
+            description=MEMORY_UTILIZATION_SENSOR_DESCRIPTION,
         )
 
     @property
-    def state(self):
+    def native_value(self):
         """Return the state of the sensor in preferred units."""
         return get_nested_value(
             self.coordinator.data, ["hw", "performance", "memory", "utilization"]
         )
 
     @property
-    def available(self):
+    def state(self):
+        """Return the state of the sensor in preferred units."""
+        return self.native_value
+
+    @property
+    def available(self) -> bool:
         """Return True if the sensor data is available."""
-        return "performance" in get_nested_value(self.coordinator.data, ["hw"], {})
+        return super().available and "performance" in get_nested_value(
+            self.coordinator.data, ["hw"], {}
+        )
 
     @property
     def unit_of_measurement(self):
         """Return the preferred units of measure."""
-        return "%"
+        return PERCENTAGE
 
     @property
     def extra_state_attributes(self):

@@ -4,12 +4,19 @@ from __future__ import annotations
 
 from datetime import timedelta
 import logging
+from typing import Any
 
 from homeassistant.config_entries import ConfigEntry
+from homeassistant.const import CONF_SCAN_INTERVAL
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryAuthFailed
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.device_registry import DeviceInfo
+from homeassistant.helpers.issue_registry import (
+    IssueSeverity,
+    async_create_issue,
+    async_delete_issue,
+)
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 from pikvm_aio import (
     PiKVMAuthenticationError,
@@ -24,8 +31,11 @@ from pikvm_aio import (
 )
 
 from .const import DOMAIN
+from .utils import get_nested_value
 
 _LOGGER = logging.getLogger(__name__)
+
+DEFAULT_SCAN_INTERVAL = 30
 
 try:
     from homeassistant.util.ssl import get_default_no_verify_context
@@ -65,11 +75,18 @@ class PiKVMDataUpdateCoordinator(DataUpdateCoordinator[PiKVMDeviceInfo]):
         except Exception:
             self.clean_host = self.url.replace("https://", "").replace("http://", "").split("/")[0]
 
+        scan_interval = DEFAULT_SCAN_INTERVAL
+        if entry is not None:
+            scan_interval = entry.options.get(
+                CONF_SCAN_INTERVAL,
+                entry.data.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL),
+            )
+
         super().__init__(
             hass,
             _LOGGER,
             name=DOMAIN,
-            update_interval=timedelta(seconds=30),
+            update_interval=timedelta(seconds=scan_interval),
             config_entry=entry,
         )
 
@@ -88,11 +105,83 @@ class PiKVMDataUpdateCoordinator(DataUpdateCoordinator[PiKVMDeviceInfo]):
     async def async_setup(self) -> None:
         """Async setup method (retained for lifecycle compatibility)."""
 
+    def _async_check_hardware_health(self, data: Any) -> None:
+        """Monitor hardware undervoltage and throttling issues."""
+        entry_id = self.config_entry.entry_id if self.config_entry else self.clean_host
+        if not entry_id:
+            return
+
+        raw_data = getattr(data, "raw", None)
+        if raw_data is None:
+            raw_data = data if isinstance(data, dict) else {}
+
+        throttling = get_nested_value(raw_data, ["hw", "health", "throttling"], {}) or {}
+        raw_flags = get_nested_value(throttling, ["raw_flags"], 0) or 0
+        text_flags = get_nested_value(throttling, ["text_flags"], []) or []
+        voltage_core = get_nested_value(throttling, ["voltage", "core"], {}) or {}
+
+        is_under_voltage_now = bool(
+            voltage_core.get("now")
+            or (isinstance(raw_flags, int) and (raw_flags & 0x1))
+            or ("under-voltage" in text_flags)
+        )
+        is_under_voltage_past = bool(
+            voltage_core.get("past")
+            or (isinstance(raw_flags, int) and (raw_flags & 0x10000))
+        )
+        has_under_voltage = is_under_voltage_now or is_under_voltage_past
+
+        is_throttled_now = bool(
+            (isinstance(raw_flags, int) and (raw_flags & 0x6))
+            or ("throttled" in text_flags)
+            or ("arm-frequency-capped" in text_flags)
+        )
+        is_throttled_past = bool(
+            isinstance(raw_flags, int) and (raw_flags & 0x60000)
+        )
+        has_throttling = is_throttled_now or is_throttled_past
+
+        # Undervoltage Issue Management
+        uv_issue_id = f"undervoltage_{entry_id}"
+        if has_under_voltage:
+            async_create_issue(
+                self.hass,
+                DOMAIN,
+                uv_issue_id,
+                is_fixable=False,
+                is_persistent=False,
+                severity=IssueSeverity.CRITICAL if is_under_voltage_now else IssueSeverity.WARNING,
+                translation_key="undervoltage",
+                translation_placeholders={"device_name": self.clean_host},
+                learn_more_url="https://docs.pikvm.org/power/",
+            )
+        else:
+            async_delete_issue(self.hass, DOMAIN, uv_issue_id)
+
+        # Throttling Issue Management
+        th_issue_id = f"throttling_{entry_id}"
+        if has_throttling:
+            async_create_issue(
+                self.hass,
+                DOMAIN,
+                th_issue_id,
+                is_fixable=False,
+                is_persistent=False,
+                severity=IssueSeverity.WARNING,
+                translation_key="throttling",
+                translation_placeholders={"device_name": self.clean_host},
+                learn_more_url="https://docs.pikvm.org/",
+            )
+        else:
+            async_delete_issue(self.hass, DOMAIN, th_issue_id)
+
     async def _async_update_data(self) -> PiKVMDeviceInfo:
         """Fetch data from PiKVM API."""
         try:
             _LOGGER.debug("Fetching PiKVM Info & MSD from %s", self.url)
-            return await self.client.get_info()
+            data = await self.client.get_info()
+            self._async_check_hardware_health(data)
+            return data
         except PiKVMAuthenticationError as auth_err:
             _LOGGER.error("Authentication failed for PiKVM at %s: %s", self.url, auth_err)
             raise ConfigEntryAuthFailed("Invalid credentials or 2FA TOTP token required") from auth_err

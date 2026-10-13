@@ -3,17 +3,21 @@
 Represents a sensor for monitoring the CPU utilization of a PiKVM device.
 """
 
+from __future__ import annotations
+
 import logging
 
-from .. import PiKVMDataUpdateCoordinator
-from ..sensor import PiKVMBaseSensor
+from homeassistant.const import PERCENTAGE
+
+from ..coordinator import PiKVMDataUpdateCoordinator
+from ..sensor import CPU_UTILIZATION_SENSOR_DESCRIPTION, PiKVMBaseSensor
 from ..utils import get_nested_value
 
 _LOGGER = logging.getLogger(__name__)
 
 
 class PiKVMCpuUtilizationSensor(PiKVMBaseSensor):
-    """Representation of a PiKVM CPU temperature sensor."""
+    """Representation of a PiKVM CPU utilization sensor."""
 
     def __init__(
         self,
@@ -28,26 +32,34 @@ class PiKVMCpuUtilizationSensor(PiKVMBaseSensor):
             unique_id_base,
             "cpu_utilization",
             name,
-            "%",
+            PERCENTAGE,
             "mdi:cpu-64-bit",
+            description=CPU_UTILIZATION_SENSOR_DESCRIPTION,
         )
 
     @property
-    def state(self):
+    def native_value(self):
         """Return the state of the sensor in preferred units."""
         return get_nested_value(
             self.coordinator.data, ["hw", "performance", "cpu", "utilization"]
         )
 
     @property
-    def available(self):
+    def state(self):
+        """Return the state of the sensor in preferred units."""
+        return self.native_value
+
+    @property
+    def available(self) -> bool:
         """Return True if the sensor data is available."""
-        return "performance" in get_nested_value(self.coordinator.data, ["hw"], {})
+        return super().available and "performance" in get_nested_value(
+            self.coordinator.data, ["hw"], {}
+        )
 
     @property
     def unit_of_measurement(self):
         """Return the preferred units of measure."""
-        return "%"
+        return PERCENTAGE
 
     @property
     def extra_state_attributes(self):

@@ -10,8 +10,10 @@ import pyotp
 import voluptuous as vol
 
 from homeassistant import config_entries
+from homeassistant.const import CONF_PORT
 from homeassistant.core import callback
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
+import homeassistant.helpers.config_validation as cv
 
 try:
     from homeassistant.helpers.service_info.zeroconf import ZeroconfServiceInfo
@@ -191,10 +193,9 @@ class PiKVMConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             existing_password = existing_entry.data.get(CONF_PASSWORD, DEFAULT_PASSWORD)
             existing_totp = existing_entry.data.get(CONF_TOTP, "")
             _LOGGER.debug(
-                "Updating existing entry with host=%s, username=%s, password=%s",
+                "Updating existing entry with host=%s, username=%s, password=***",
                 host,
                 existing_username,
-                re.sub(r'.', '*', existing_password),
             )
             update_existing_entry(
                 self.hass,
@@ -262,10 +263,9 @@ class PiKVMConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
         if user_input is not None:
             _LOGGER.debug(
-                "Entered async_step_user with data: host=%s, username=%s, password=%s",
+                "Entered async_step_user with data: host=%s, username=%s, password=***",
                 user_input[CONF_HOST],
                 user_input[CONF_USERNAME],
-                re.sub(r'.', '*', user_input[CONF_PASSWORD]),
             )
             entry, setup_errors = await perform_device_setup(self, user_input)
             if setup_errors:
@@ -388,6 +388,96 @@ class PiKVMConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         return self.async_show_form(
             step_id="reauth_confirm",
             data_schema=reauth_schema,
+            errors=errors,
+            description_placeholders={"host": clean_host},
+        )
+
+    async def async_step_reconfigure(
+        self, user_input: dict[str, Any] | None = None
+    ) -> config_entries.ConfigFlowResult:
+        """Handle a reconfiguration flow initialized by the user."""
+        return await self.async_step_reconfigure_confirm(user_input=user_input)
+
+    async def async_step_reconfigure_confirm(
+        self, user_input: dict[str, Any] | None = None
+    ) -> config_entries.ConfigFlowResult:
+        """Handle reconfiguration of host, port, username, password, and totp."""
+        errors: dict[str, str] = {}
+        reconfigure_entry = self._get_reconfigure_entry()
+
+        if user_input is not None and reconfigure_entry is not None:
+            host = user_input[CONF_HOST]
+            if CONF_PORT in user_input and user_input[CONF_PORT]:
+                port = user_input[CONF_PORT]
+                if f":{port}" not in host:
+                    host = f"{host}:{port}"
+
+            username = user_input[CONF_USERNAME]
+            password = user_input[CONF_PASSWORD]
+            totp_secret = user_input.get(CONF_TOTP, "").strip()
+
+            totp_code = ""
+            if totp_secret:
+                try:
+                    totp_code = pyotp.TOTP(totp_secret).now()
+                except (binascii.Error, ValueError):
+                    errors["base"] = "invalid_totp"
+
+            if not errors:
+                serialized_cert = await fetch_serialized_cert(self.hass, host)
+                if not serialized_cert:
+                    errors["base"] = "cannot_fetch_cert"
+                else:
+                    response = await is_pikvm_device(
+                        self.hass, host, username, password + totp_code, serialized_cert
+                    )
+                    if response.error:
+                        errors["base"] = response.error
+                    elif not response.success:
+                        errors["base"] = "cannot_connect"
+                    else:
+                        await self.async_set_unique_id(response.serial)
+                        self._abort_if_unique_id_mismatch(reason="unique_id_mismatched")
+
+                        return self.async_update_reload_and_abort(
+                            reconfigure_entry,
+                            data={
+                                **reconfigure_entry.data,
+                                CONF_HOST: host,
+                                CONF_USERNAME: username,
+                                CONF_PASSWORD: password,
+                                CONF_TOTP: totp_secret,
+                                CONF_CERTIFICATE: serialized_cert,
+                                CONF_MODEL: response.model.lower() if response.model else reconfigure_entry.data.get(CONF_MODEL),
+                            },
+                        )
+
+        default_host = ""
+        default_username = DEFAULT_USERNAME
+        default_password = DEFAULT_PASSWORD
+        default_totp = ""
+        clean_host = ""
+
+        if reconfigure_entry is not None:
+            default_host = reconfigure_entry.data.get(CONF_HOST, "")
+            default_username = reconfigure_entry.data.get(CONF_USERNAME, DEFAULT_USERNAME)
+            default_password = reconfigure_entry.data.get(CONF_PASSWORD, DEFAULT_PASSWORD)
+            default_totp = reconfigure_entry.data.get(CONF_TOTP, "")
+            clean_host = parse_host_port(default_host)[0]
+
+        reconfigure_schema = vol.Schema(
+            {
+                vol.Required(CONF_HOST, default=default_host): str,
+                vol.Optional(CONF_PORT): cv.port,
+                vol.Required(CONF_USERNAME, default=default_username): str,
+                vol.Required(CONF_PASSWORD, default=default_password): str,
+                vol.Optional(CONF_TOTP, default=default_totp): str,
+            }
+        )
+
+        return self.async_show_form(
+            step_id="reconfigure_confirm",
+            data_schema=reconfigure_schema,
             errors=errors,
             description_placeholders={"host": clean_host},
         )

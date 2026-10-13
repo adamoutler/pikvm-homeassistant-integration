@@ -1,18 +1,19 @@
 """The PiKVMCpuTempSensor class, which represents a CPU temperature sensor for PiKVM."""
 
+from __future__ import annotations
+
 import logging
 
 from homeassistant.const import UnitOfTemperature
 from homeassistant.helpers import temperature
 
-from .. import PiKVMDataUpdateCoordinator
-from ..sensor import PiKVMBaseSensor
+from ..coordinator import PiKVMDataUpdateCoordinator
+from ..sensor import CPU_TEMP_SENSOR_DESCRIPTION, PiKVMBaseSensor
 from ..utils import get_nested_value
 
 _LOGGER = logging.getLogger(__name__)
 
 
-# Function to convert temperature
 def convert_temperature(value, from_unit, to_unit):
     """Convert temperature from one unit to another."""
     if from_unit == to_unit:
@@ -38,16 +39,24 @@ class PiKVMCpuTempSensor(PiKVMBaseSensor):
             name,
             "°C",
             "mdi:thermometer",
+            description=CPU_TEMP_SENSOR_DESCRIPTION,
         )
+
+    @property
+    def native_value(self):
+        """Return the native value of the sensor in Celsius."""
+        value = get_nested_value(self.coordinator.data, ["hw", "health", "temp", "cpu"])
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            return None
 
     @property
     def state(self):
         """Return the state of the sensor in preferred units."""
-        value = get_nested_value(self.coordinator.data, ["hw", "health", "temp", "cpu"])
-        try:
-            temp_value = float(value)
-        except (TypeError, ValueError):
-            return None  # or handle the error appropriately
+        temp_value = self.native_value
+        if temp_value is None:
+            return None
         return self.coordinator.hass.config.units.temperature(
             temp_value, UnitOfTemperature.CELSIUS
         )
