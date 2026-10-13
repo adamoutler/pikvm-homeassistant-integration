@@ -11,7 +11,7 @@
           "totp": "TOTP Generator Key (Not 6-Digit Code)"
         },
         "data_description": {
-          "url": "The IP address or hostname of the PiKVM device (e.g., https://pikvm.local).",
+          "url": "The IP address or hostname of the PiKVM device (e.g., pikvm.local).",
           "username": "Username used to log into PiKVM (default: admin).",
           "password": "Password used to log into PiKVM.",
           "totp": "Base32 two-factor authentication generator secret if 2FA is configured."
