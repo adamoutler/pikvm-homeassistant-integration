@@ -111,6 +111,17 @@ async def async_setup_entry(
             )
         )
 
+    ent_reg = er.async_get(hass)
+    valid_uids = {e.unique_id for e in entities}
+    for ent_entry in er.async_entries_for_config_entry(ent_reg, config_entry.entry_id):
+        if ent_entry.domain == "binary_sensor" and ent_entry.unique_id not in valid_uids:
+            _LOGGER.info(
+                "Removing stale legacy binary_sensor entity %s (unique_id: %s)",
+                ent_entry.entity_id,
+                ent_entry.unique_id,
+            )
+            ent_reg.async_remove(ent_entry.entity_id)
+
     async_add_entities(entities)
 
 

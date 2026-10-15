@@ -98,11 +98,23 @@ async def test_sensor_async_setup_entry_standard_sensors(hass, mock_coordinator)
     )
     entry.add_to_hass(hass)
 
+    from homeassistant.helpers import entity_registry as er
+
+    ent_reg = er.async_get(hass)
+    stale_ent = ent_reg.async_get_or_create(
+        "sensor",
+        DOMAIN,
+        f"{entry.entry_id}_unknown_cpu_temp",
+        config_entry=entry,
+    )
+    assert ent_reg.async_get(stale_ent.entity_id) is not None
+
     hass.data.setdefault(DOMAIN, {})[entry.entry_id] = mock_coordinator
 
     mock_add_entities = MagicMock()
     await async_setup_entry(hass, entry, mock_add_entities)
 
+    assert ent_reg.async_get(stale_ent.entity_id) is None
     assert mock_add_entities.call_count == 1
     entities, update_before_add = mock_add_entities.call_args[0]
     assert update_before_add is True

@@ -21,6 +21,7 @@ from homeassistant.const import (
     UnitOfTemperature,
 )
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.typing import StateType
 
@@ -313,6 +314,17 @@ async def async_setup_entry(
         PiKVMSensor(coordinator, unique_id_base, description)
         for description in SENSOR_DESCRIPTIONS
     ]
+
+    ent_reg = er.async_get(hass)
+    valid_uids = {s.unique_id for s in sensors}
+    for ent_entry in er.async_entries_for_config_entry(ent_reg, config_entry.entry_id):
+        if ent_entry.domain == "sensor" and ent_entry.unique_id not in valid_uids:
+            _LOGGER.info(
+                "Removing stale legacy sensor entity %s (unique_id: %s)",
+                ent_entry.entity_id,
+                ent_entry.unique_id,
+            )
+            ent_reg.async_remove(ent_entry.entity_id)
 
     async_add_entities(sensors, True)
     _LOGGER.debug("PiKVM sensors added to Home Assistant")

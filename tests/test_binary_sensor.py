@@ -60,11 +60,21 @@ async def test_binary_sensor_setup_entry(hass, mock_coordinator):
         data={"host": "https://pikvm.local", "serial": "sn_123"},
     )
     entry.add_to_hass(hass)
+    ent_reg = er.async_get(hass)
+    stale_bin = ent_reg.async_get_or_create(
+        "binary_sensor",
+        DOMAIN,
+        f"{entry.entry_id}_stale_other_throttling",
+        config_entry=entry,
+    )
+    assert ent_reg.async_get(stale_bin.entity_id) is not None
+
     hass.data.setdefault(DOMAIN, {})[entry.entry_id] = mock_coordinator
 
     mock_add_entities = MagicMock()
     await async_setup_entry(hass, entry, mock_add_entities)
 
+    assert ent_reg.async_get(stale_bin.entity_id) is None
     assert mock_add_entities.call_count == 1
     entities = mock_add_entities.call_args[0][0]
     # 3 standard (throttling, msd_enabled, msd_drive) + 2 extras (vnc, ipmi) = 5
