@@ -18,7 +18,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
-from .const import DOMAIN
+from .const import DOMAIN, LEGACY_DOMAIN
 from .coordinator import PiKVMDataUpdateCoordinator
 from .entity import PiKVMEntity
 from .utils import get_nested_value, get_unique_id_base
@@ -49,7 +49,6 @@ BINARY_SENSOR_DESCRIPTIONS: tuple[PiKVMBinarySensorEntityDescription, ...] = (
     PiKVMBinarySensorEntityDescription(
         key="throttling",
         translation_key="throttling",
-        name="Throttling",
         device_class=BinarySensorDeviceClass.PROBLEM,
         entity_category=EntityCategory.DIAGNOSTIC,
         icon="mdi:alert",
@@ -61,7 +60,6 @@ BINARY_SENSOR_DESCRIPTIONS: tuple[PiKVMBinarySensorEntityDescription, ...] = (
     PiKVMBinarySensorEntityDescription(
         key="msd_enabled",
         translation_key="msd_enabled",
-        name="MSD Enabled",
         device_class=BinarySensorDeviceClass.POWER,
         entity_category=EntityCategory.DIAGNOSTIC,
         icon="mdi:check-circle",
@@ -71,7 +69,6 @@ BINARY_SENSOR_DESCRIPTIONS: tuple[PiKVMBinarySensorEntityDescription, ...] = (
     PiKVMBinarySensorEntityDescription(
         key="msd_drive",
         translation_key="msd_drive",
-        name="MSD Drive",
         device_class=BinarySensorDeviceClass.CONNECTIVITY,
         entity_category=EntityCategory.DIAGNOSTIC,
         icon="mdi:usb",
@@ -130,14 +127,15 @@ def _async_cleanup_legacy_sensors(
 
     for key in migrated_keys:
         old_unique_id = f"{unique_id_base}_{key}"
-        old_entity_id = ent_reg.async_get_entity_id("sensor", DOMAIN, old_unique_id)
-        if old_entity_id:
-            _LOGGER.info(
-                "Migrating legacy sensor %s to binary_sensor platform (unique_id: %s)",
-                old_entity_id,
-                old_unique_id,
-            )
-            ent_reg.async_remove(old_entity_id)
+        for dom in (DOMAIN, LEGACY_DOMAIN):
+            old_entity_id = ent_reg.async_get_entity_id("sensor", dom, old_unique_id)
+            if old_entity_id:
+                _LOGGER.info(
+                    "Migrating legacy sensor %s to binary_sensor platform (unique_id: %s)",
+                    old_entity_id,
+                    old_unique_id,
+                )
+                ent_reg.async_remove(old_entity_id)
 
 
 class PiKVMBinarySensor(PiKVMEntity, BinarySensorEntity):
@@ -156,14 +154,6 @@ class PiKVMBinarySensor(PiKVMEntity, BinarySensorEntity):
         super().__init__(coordinator, unique_id_base)
         self.entity_description = description
         self._attr_unique_id = f"{unique_id_base}_{description.key}"
-        self._attr_name = description.name
-
-    @property
-    def name(self) -> str | None:
-        """Return the entity name."""
-        if self.platform is None and self.entity_description is not None:
-            return self.entity_description.name
-        return super().name
 
     @property
     def is_on(self) -> bool | None:
@@ -210,7 +200,6 @@ class PiKVMExtraBinarySensor(PiKVMEntity, BinarySensorEntity):
         self._extra_name = extra_name
         self._attr_unique_id = f"{unique_id_base}_extra_{extra_name}"
         self._attr_translation_key = f"extra_{extra_name}"
-        self._attr_name = extra_name.replace("_", " ").title()
         self._attr_icon = EXTRA_ICONS.get(extra_name, "mdi:information")
 
     @property

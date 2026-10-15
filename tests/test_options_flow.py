@@ -7,9 +7,9 @@ from homeassistant.const import CONF_SCAN_INTERVAL
 from homeassistant.data_entry_flow import FlowResultType
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
-from custom_components.pikvm_ha.config_flow import PiKVMConfigFlow
-from custom_components.pikvm_ha.const import DOMAIN
-from custom_components.pikvm_ha.options_flow import (
+from custom_components.pikvm.config_flow import PiKVMConfigFlow
+from custom_components.pikvm.const import DOMAIN
+from custom_components.pikvm.options_flow import (
     DEFAULT_SCAN_INTERVAL,
     PiKVMOptionsFlowHandler,
 )

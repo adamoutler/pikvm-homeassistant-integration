@@ -4,7 +4,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
-from custom_components.pikvm_ha.const import (
+from custom_components.pikvm.const import (
     CONF_HOST,
     CONF_PASSWORD,
     CONF_TOTP,
@@ -13,7 +13,7 @@ from custom_components.pikvm_ha.const import (
     DEFAULT_USERNAME,
     DOMAIN,
 )
-from custom_components.pikvm_ha.utils import (
+from custom_components.pikvm.utils import (
     bytes_to_mb,
     create_data_schema,
     find_existing_entry,
@@ -106,8 +106,8 @@ def test_find_existing_entry():
 async def test_get_translations(hass):
     """Test get_translations returns lookup callable."""
     with patch(
-        "custom_components.pikvm_ha.utils.async_get_translations",
-        new=AsyncMock(return_value={"component.pikvm_ha.step.user.title": "PiKVM Setup"}),
+        "custom_components.pikvm.utils.async_get_translations",
+        new=AsyncMock(return_value={"component.pikvm.step.user.title": "PiKVM Setup"}),
     ):
         translate = await get_translations(hass, "en", DOMAIN)
         assert translate("step.user.title", "Default") == "PiKVM Setup"

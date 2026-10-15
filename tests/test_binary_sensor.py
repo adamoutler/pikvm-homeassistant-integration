@@ -9,7 +9,7 @@ from homeassistant.const import EntityCategory
 from homeassistant.helpers import entity_registry as er
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
-from custom_components.pikvm_ha.binary_sensor import (
+from custom_components.pikvm.binary_sensor import (
     BINARY_SENSOR_DESCRIPTIONS,
     PiKVMBinarySensor,
     PiKVMBinarySensorEntityDescription,
@@ -17,7 +17,7 @@ from custom_components.pikvm_ha.binary_sensor import (
     _async_cleanup_legacy_sensors,
     async_setup_entry,
 )
-from custom_components.pikvm_ha.const import DOMAIN
+from custom_components.pikvm.const import DOMAIN
 
 
 @pytest.fixture
@@ -102,7 +102,8 @@ def test_pikvm_binary_sensor_properties(mock_coordinator):
     sensor = PiKVMBinarySensor(mock_coordinator, "test_uid", throttling_desc)
 
     assert sensor.unique_id == "test_uid_throttling"
-    assert sensor.name == "Throttling"
+    assert sensor.translation_key == "throttling"
+    assert sensor.has_entity_name is True
     assert sensor.is_on is True
     assert sensor.device_class == BinarySensorDeviceClass.PROBLEM
     assert sensor.entity_category == EntityCategory.DIAGNOSTIC
@@ -154,7 +155,8 @@ def test_pikvm_extra_binary_sensor(mock_coordinator):
     )
 
     assert extra_sensor.unique_id == "test_uid_extra_vnc"
-    assert extra_sensor.name == "Vnc"
+    assert extra_sensor.translation_key == "extra_vnc"
+    assert extra_sensor.has_entity_name is True
     assert extra_sensor.is_on is True
     assert extra_sensor.device_class == BinarySensorDeviceClass.RUNNING
     assert extra_sensor.entity_category == EntityCategory.DIAGNOSTIC
@@ -174,30 +176,19 @@ def test_pikvm_extra_binary_sensor(mock_coordinator):
 
 
 def test_pikvm_binary_sensor_name_fallback_and_available_fn_none(mock_coordinator):
-    """Test PiKVMBinarySensor name fallback (line 166) and available when available_fn is None (line 180)."""
+    """Test PiKVMBinarySensor translation_key and available when available_fn is None."""
     desc = PiKVMBinarySensorEntityDescription(
         key="test_custom",
-        name="Custom Binary Sensor",
+        translation_key="test_custom",
         is_on_fn=lambda data: True,
         available_fn=None,
     )
     sensor = PiKVMBinarySensor(mock_coordinator, "test_uid", desc)
 
-    # Line 180: super().available is True and available_fn is None -> returns True
     mock_coordinator.last_update_success = True
     assert sensor.available is True
+    assert sensor.translation_key == "test_custom"
 
-    # Line 177: super().available is False -> returns False
     mock_coordinator.last_update_success = False
     assert sensor.available is False
-
-    # Line 166: fallback to super().name when platform is not None
-    mock_coordinator.last_update_success = True
-    sensor._platform = MagicMock()
-    assert sensor.name == "Custom Binary Sensor"
-
-    # Line 166: fallback to super().name when entity_description is None
-    sensor._platform = None
-    sensor.entity_description = None
-    assert sensor.name == "Custom Binary Sensor"
 

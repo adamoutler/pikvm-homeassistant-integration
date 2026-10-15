@@ -18,8 +18,8 @@ from pikvm_aio import (
 )
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
-from custom_components.pikvm_ha.const import DOMAIN
-from custom_components.pikvm_ha.coordinator import PiKVMDataUpdateCoordinator
+from custom_components.pikvm.const import DOMAIN
+from custom_components.pikvm.coordinator import PiKVMDataUpdateCoordinator
 
 
 @pytest.fixture
@@ -118,7 +118,7 @@ async def test_coordinator_communication_errors(hass, error_class, error_message
 def test_coordinator_ssl_context_fallback():
     """Test fallback when get_default_no_verify_context raises an Exception (covers lines 34-35)."""
     import importlib
-    import custom_components.pikvm_ha.coordinator as coordinator_mod
+    import custom_components.pikvm.coordinator as coordinator_mod
 
     with patch(
         "homeassistant.util.ssl.get_default_no_verify_context",
@@ -136,7 +136,7 @@ def test_coordinator_ssl_context_fallback():
 async def test_coordinator_parse_host_port_exception(hass):
     """Test clean_host fallback when parse_host_port raises an Exception (covers lines 65-66)."""
     with patch(
-        "custom_components.pikvm_ha.coordinator.parse_host_port",
+        "custom_components.pikvm.coordinator.parse_host_port",
         side_effect=Exception("Failed parsing host"),
     ):
         coordinator = PiKVMDataUpdateCoordinator(
@@ -420,8 +420,8 @@ async def test_coordinator_hardware_health_empty_entry_id(hass):
         }
     }
 
-    with patch("custom_components.pikvm_ha.coordinator.async_create_issue") as mock_create_issue, patch(
-        "custom_components.pikvm_ha.coordinator.async_delete_issue"
+    with patch("custom_components.pikvm.coordinator.async_create_issue") as mock_create_issue, patch(
+        "custom_components.pikvm.coordinator.async_delete_issue"
     ) as mock_delete_issue:
         coordinator._async_check_hardware_health(unhealthy_data)
         mock_create_issue.assert_not_called()
@@ -515,5 +515,41 @@ async def test_coordinator_update_data_triggers_hardware_health(hass):
     issue_registry = ir.async_get(hass)
     assert issue_registry.async_get_issue(DOMAIN, f"undervoltage_{entry.entry_id}") is not None
     assert issue_registry.async_get_issue(DOMAIN, f"throttling_{entry.entry_id}") is not None
+
+
+@pytest.mark.asyncio
+async def test_coordinator_ssl_and_malformed_health_data(hass):
+    """Test ssl.SSLError handling and non-dict throttling/text_flags/voltage_core in coordinator."""
+    import ssl
+
+    coordinator = PiKVMDataUpdateCoordinator(
+        hass=hass,
+        url="https://pikvm.local",
+        username="admin",
+        password="password",
+        totp="",
+        cert="",
+    )
+
+    coordinator.client.get_info = AsyncMock(side_effect=ssl.SSLError("bad cert"))
+    with pytest.raises(UpdateFailed, match="SSL certificate validation failed"):
+        await coordinator._async_update_data()
+
+    coordinator._async_check_hardware_health({"hw": {"health": {"throttling": "invalid"}}})
+    coordinator._async_check_hardware_health(
+        {
+            "hw": {
+                "health": {
+                    "throttling": {
+                        "raw_flags": 0,
+                        "text_flags": "not-a-list",
+                        "voltage": {"core": "not-a-dict"},
+                    }
+                }
+            }
+        }
+    )
+    issue_registry = ir.async_get(hass)
+    assert issue_registry.async_get_issue(DOMAIN, "undervoltage_pikvm.local") is None
 
 

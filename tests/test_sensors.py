@@ -5,19 +5,19 @@ import pytest
 
 from homeassistant.const import UnitOfTemperature, PERCENTAGE, REVOLUTIONS_PER_MINUTE
 
-from custom_components.pikvm_ha.sensors.pikvm_cpu_temp_sensor import (
+from custom_components.pikvm.sensors.pikvm_cpu_temp_sensor import (
     PiKVMCpuTempSensor,
     convert_temperature,
 )
-from custom_components.pikvm_ha.sensors.pikvm_cpu_utilization_sensor import PiKVMCpuUtilizationSensor
-from custom_components.pikvm_ha.sensors.pikvm_memory_utilization_sensor import PiKVMMemoryUtilizationSensor
-from custom_components.pikvm_ha.sensors.pikvm_fan_speed_sensor import PiKVMFanSpeedSensor
-from custom_components.pikvm_ha.sensors.pikvm_throttling_sensor import PiKVMThrottlingSensor
-from custom_components.pikvm_ha.sensors.pikvm_msd_enabled_sensor import PiKVMSDEnabledSensor
-from custom_components.pikvm_ha.sensors.pikvm_msd_drive_sensor import PiKVMSDDriveSensor
-from custom_components.pikvm_ha.sensors.pikvm_msd_storage_sensor import PiKVMSDStorageSensor
-from custom_components.pikvm_ha.sensors.pikvm_extra_sensor import PiKVMExtraSensor
-from custom_components.pikvm_ha.sensor import (
+from custom_components.pikvm.sensors.pikvm_cpu_utilization_sensor import PiKVMCpuUtilizationSensor
+from custom_components.pikvm.sensors.pikvm_memory_utilization_sensor import PiKVMMemoryUtilizationSensor
+from custom_components.pikvm.sensors.pikvm_fan_speed_sensor import PiKVMFanSpeedSensor
+from custom_components.pikvm.sensors.pikvm_throttling_sensor import PiKVMThrottlingSensor
+from custom_components.pikvm.sensors.pikvm_msd_enabled_sensor import PiKVMSDEnabledSensor
+from custom_components.pikvm.sensors.pikvm_msd_drive_sensor import PiKVMSDDriveSensor
+from custom_components.pikvm.sensors.pikvm_msd_storage_sensor import PiKVMSDStorageSensor
+from custom_components.pikvm.sensors.pikvm_extra_sensor import PiKVMExtraSensor
+from custom_components.pikvm.sensor import (
     CPU_TEMP_SENSOR_DESCRIPTION,
     CPU_UTILIZATION_SENSOR_DESCRIPTION,
     FAN_SPEED_SENSOR_DESCRIPTION,
@@ -161,7 +161,7 @@ def test_convert_temperature_same_unit():
 def test_convert_temperature_different_unit():
     """Test convert_temperature delegates to temperature.convert_temperature when units differ (line 20)."""
     with patch(
-        "custom_components.pikvm_ha.sensors.pikvm_cpu_temp_sensor.temperature.convert_temperature",
+        "custom_components.pikvm.sensors.pikvm_cpu_temp_sensor.temperature.convert_temperature",
         create=True,
         return_value=113.9,
     ) as mock_conv:

@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import asyncio
 from datetime import timedelta
 import logging
+import ssl
 from typing import Any
 
+import aiohttp
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_SCAN_INTERVAL
 from homeassistant.core import HomeAssistant
@@ -112,13 +115,19 @@ class PiKVMDataUpdateCoordinator(DataUpdateCoordinator[PiKVMDeviceInfo]):
             return
 
         raw_data = getattr(data, "raw", None)
-        if raw_data is None:
+        if not isinstance(raw_data, dict):
             raw_data = data if isinstance(data, dict) else {}
 
-        throttling = get_nested_value(raw_data, ["hw", "health", "throttling"], {}) or {}
+        throttling = get_nested_value(raw_data, ["hw", "health", "throttling"], {})
+        if not isinstance(throttling, dict):
+            throttling = {}
         raw_flags = get_nested_value(throttling, ["raw_flags"], 0) or 0
-        text_flags = get_nested_value(throttling, ["text_flags"], []) or []
-        voltage_core = get_nested_value(throttling, ["voltage", "core"], {}) or {}
+        text_flags = get_nested_value(throttling, ["text_flags"], [])
+        if not isinstance(text_flags, (list, tuple, set)):
+            text_flags = []
+        voltage_core = get_nested_value(throttling, ["voltage", "core"], {})
+        if not isinstance(voltage_core, dict):
+            voltage_core = {}
 
         is_under_voltage_now = bool(
             voltage_core.get("now")
@@ -185,10 +194,13 @@ class PiKVMDataUpdateCoordinator(DataUpdateCoordinator[PiKVMDeviceInfo]):
         except PiKVMAuthenticationError as auth_err:
             _LOGGER.error("Authentication failed for PiKVM at %s: %s", self.url, auth_err)
             raise ConfigEntryAuthFailed("Invalid credentials or 2FA TOTP token required") from auth_err
-        except PiKVMTimeoutError as err:
+        except (PiKVMTimeoutError, asyncio.TimeoutError) as err:
             _LOGGER.debug("Timeout connecting to PiKVM at %s: %s", self.url, err)
             raise UpdateFailed(f"Connection timed out reaching {self.clean_host}") from err
-        except PiKVMConnectionError as err:
+        except ssl.SSLError as err:
+            _LOGGER.debug("SSL error connecting to PiKVM at %s: %s", self.url, err)
+            raise UpdateFailed(f"SSL certificate validation failed for {self.clean_host}") from err
+        except (PiKVMConnectionError, aiohttp.ClientError, OSError) as err:
             _LOGGER.debug("Connection error to PiKVM at %s: %s", self.url, err)
             raise UpdateFailed(f"Cannot connect to {self.clean_host} (host offline or connection refused)") from err
         except (PiKVMDeviceError, PiKVMError) as err:

@@ -6,7 +6,7 @@ from homeassistant.config_entries import ConfigEntryState
 from homeassistant.helpers import device_registry as dr, entity_registry as er
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
-from custom_components.pikvm_ha import (
+from custom_components.pikvm import (
     PLATFORMS,
     _async_cleanup_devices,
     async_remove_entry,
@@ -15,7 +15,7 @@ from custom_components.pikvm_ha import (
     async_unload_entry,
     update_listener,
 )
-from custom_components.pikvm_ha.const import (
+from custom_components.pikvm.const import (
     CONF_CERTIFICATE,
     CONF_HOST,
     CONF_PASSWORD,
@@ -73,7 +73,7 @@ async def test_async_setup_entry_success(hass, pikvm_cert, mock_device_info):
     entry.mock_state(hass, ConfigEntryState.SETUP_IN_PROGRESS)
 
     with patch(
-        "custom_components.pikvm_ha.coordinator.PiKVMClient.get_info",
+        "custom_components.pikvm.coordinator.PiKVMClient.get_info",
         new=AsyncMock(return_value=mock_device_info),
     ), patch.object(
         hass.config_entries, "async_forward_entry_setups", new=AsyncMock(return_value=True)
@@ -117,7 +117,7 @@ async def test_async_setup_entry_unique_id_migration(hass, pikvm_cert, mock_devi
     entry.mock_state(hass, ConfigEntryState.SETUP_IN_PROGRESS)
 
     with patch(
-        "custom_components.pikvm_ha.coordinator.PiKVMClient.get_info",
+        "custom_components.pikvm.coordinator.PiKVMClient.get_info",
         new=AsyncMock(return_value=mock_device_info),
     ), patch.object(
         hass.config_entries, "async_forward_entry_setups", new=AsyncMock(return_value=True)
@@ -236,7 +236,7 @@ async def test_async_setup_entry_generic_title_disambiguation(hass, pikvm_cert, 
     entry.mock_state(hass, ConfigEntryState.SETUP_IN_PROGRESS)
 
     with patch(
-        "custom_components.pikvm_ha.coordinator.PiKVMClient.get_info",
+        "custom_components.pikvm.coordinator.PiKVMClient.get_info",
         new=AsyncMock(return_value=mock_device_info),
     ), patch.object(
         hass.config_entries, "async_forward_entry_setups", new=AsyncMock(return_value=True)
@@ -278,7 +278,7 @@ async def test_async_setup_entry_migrates_legacy_device_name(hass, pikvm_cert, m
     from pikvm_aio import PiKVMConnectionError
 
     with patch(
-        "custom_components.pikvm_ha.coordinator.PiKVMClient.get_info",
+        "custom_components.pikvm.coordinator.PiKVMClient.get_info",
         side_effect=PiKVMConnectionError("Cannot connect"),
     ):
         with pytest.raises(ConfigEntryNotReady):
@@ -319,10 +319,10 @@ async def test_async_setup_entry_parse_host_port_exception(
     entry.mock_state(hass, ConfigEntryState.SETUP_IN_PROGRESS)
 
     with patch(
-        "custom_components.pikvm_ha.parse_host_port",
+        "custom_components.pikvm.parse_host_port",
         side_effect=ValueError("Invalid host format"),
     ), patch(
-        "custom_components.pikvm_ha.coordinator.PiKVMClient.get_info",
+        "custom_components.pikvm.coordinator.PiKVMClient.get_info",
         new=AsyncMock(return_value=mock_device_info),
     ), patch.object(
         hass.config_entries, "async_forward_entry_setups", new=AsyncMock(return_value=True)
@@ -370,7 +370,7 @@ async def test_async_setup_entry_removes_legacy_mismatched_device_and_entities(
     )
 
     with patch(
-        "custom_components.pikvm_ha.coordinator.PiKVMClient.get_info",
+        "custom_components.pikvm.coordinator.PiKVMClient.get_info",
         new=AsyncMock(return_value=mock_device_info),
     ), patch.object(
         hass.config_entries, "async_forward_entry_setups", new=AsyncMock(return_value=True)
@@ -406,7 +406,7 @@ async def test_async_setup_entry_raw_data_fallback_dict(hass, pikvm_cert):
     }
 
     with patch(
-        "custom_components.pikvm_ha.coordinator.PiKVMClient.get_info",
+        "custom_components.pikvm.coordinator.PiKVMClient.get_info",
         new=AsyncMock(return_value=dict_data),
     ), patch.object(
         hass.config_entries, "async_forward_entry_setups", new=AsyncMock(return_value=True)
@@ -442,7 +442,7 @@ async def test_async_setup_entry_raw_data_fallback_non_dict(hass, pikvm_cert):
         kvmd_version = "1.0"
 
     with patch(
-        "custom_components.pikvm_ha.coordinator.PiKVMClient.get_info",
+        "custom_components.pikvm.coordinator.PiKVMClient.get_info",
         new=AsyncMock(return_value=CustomData()),
     ), patch.object(
         hass.config_entries, "async_forward_entry_setups", new=AsyncMock(return_value=True)
@@ -480,7 +480,7 @@ async def test_async_setup_entry_naming_fallback_model(hass, pikvm_cert):
     device_data.kvmd_version = "3.100"
 
     with patch(
-        "custom_components.pikvm_ha.coordinator.PiKVMClient.get_info",
+        "custom_components.pikvm.coordinator.PiKVMClient.get_info",
         new=AsyncMock(return_value=device_data),
     ), patch.object(
         hass.config_entries, "async_forward_entry_setups", new=AsyncMock(return_value=True)
@@ -519,7 +519,7 @@ async def test_async_setup_entry_naming_fallback_generic(hass, pikvm_cert):
     device_data.kvmd_version = "3.100"
 
     with patch(
-        "custom_components.pikvm_ha.coordinator.PiKVMClient.get_info",
+        "custom_components.pikvm.coordinator.PiKVMClient.get_info",
         new=AsyncMock(return_value=device_data),
     ), patch.object(
         hass.config_entries, "async_forward_entry_setups", new=AsyncMock(return_value=True)
@@ -570,7 +570,7 @@ async def test_async_setup_entry_updates_existing_device_name_in_registry(
     assert dev.name_by_user is None
 
     with patch(
-        "custom_components.pikvm_ha.coordinator.PiKVMClient.get_info",
+        "custom_components.pikvm.coordinator.PiKVMClient.get_info",
         new=AsyncMock(return_value=mock_device_info),
     ), patch.object(
         hass.config_entries, "async_forward_entry_setups", new=AsyncMock(return_value=True)
@@ -627,6 +627,175 @@ async def test_async_cleanup_devices_removes_mismatched_device_and_entities(hass
     assert dev_reg.async_get(valid_dev.id) is not None
     assert dev_reg.async_get(mismatched_dev.id) is None
     assert ent_reg.async_get(mismatched_ent.entity_id) is None
+
+
+@pytest.mark.asyncio
+async def test_migrate_legacy_domain_in_place_and_cross_entry_and_orphaned(hass):
+    """Test async_migrate_legacy_domain across all 3 scenarios and edge cases."""
+    from custom_components.pikvm import (
+        _extract_serial_from_entry_or_device,
+        _migrate_entity_to_pikvm,
+        async_migrate_entry,
+        async_migrate_legacy_domain,
+    )
+    from custom_components.pikvm.const import LEGACY_DOMAIN
+
+    dev_reg = dr.async_get(hass)
+    ent_reg = er.async_get(hass)
+
+    # Test _extract_serial_from_entry_or_device when entry has no serial/unique_id but device does
+    empty_entry = MockConfigEntry(domain=LEGACY_DOMAIN, entry_id="legacy_no_serial", data={})
+    empty_entry.add_to_hass(hass)
+    dev_with_serial = dev_reg.async_get_or_create(
+        config_entry_id=empty_entry.entry_id,
+        identifiers={(LEGACY_DOMAIN, "SN_FROM_DEV")},
+        name="Legacy Dev",
+    )
+    assert _extract_serial_from_entry_or_device(empty_entry, dev_reg) == "sn_from_dev"
+    assert _extract_serial_from_entry_or_device(None, dev_reg) is None
+
+    # Create an entity on empty_entry with a loaded state in hass.states
+    ent1 = ent_reg.async_get_or_create(
+        domain="sensor",
+        platform=LEGACY_DOMAIN,
+        unique_id=f"{empty_entry.entry_id}_sn_from_dev_cpu_temp",
+        device_id=dev_with_serial.id,
+        config_entry=empty_entry,
+    )
+    hass.states.async_set(ent1.entity_id, "unavailable")
+
+    # Scenario 1: In-place migration of empty_entry (pikvm_ha -> pikvm)
+    with patch.object(hass.config_entries, "async_setup", new=AsyncMock(return_value=True)):
+        migrated = await async_migrate_legacy_domain(hass)
+        assert migrated is True
+        assert empty_entry.domain == DOMAIN
+        updated_ent1 = ent_reg.async_get(ent1.entity_id)
+        assert updated_ent1.platform == DOMAIN
+        updated_dev1 = dev_reg.async_get(dev_with_serial.id)
+        assert (DOMAIN, "SN_FROM_DEV") in updated_dev1.identifiers
+
+    # Test no-op in _migrate_entity_to_pikvm when already migrated
+    _migrate_entity_to_pikvm(
+        hass, ent_reg, ent_reg.async_get(ent1.entity_id), empty_entry.entry_id, ent1.unique_id
+    )
+
+    # Test ValueError fallback in _migrate_entity_to_pikvm
+    with patch.object(ent_reg, "async_update_entity_platform", side_effect=ValueError("already loaded")):
+        _migrate_entity_to_pikvm(
+            hass,
+            ent_reg,
+            ent_reg.async_get(ent1.entity_id),
+            empty_entry.entry_id,
+            f"{empty_entry.entry_id}_sn_from_dev_cpu_temp_renamed",
+        )
+
+    # Scenario 2: Cross-entry merge (legacy_entry + new_entry for same serial)
+    legacy_dup = MockConfigEntry(
+        domain=LEGACY_DOMAIN,
+        entry_id="old_entry_dup",
+        unique_id="sn_dup",
+        data={CONF_SERIAL: "sn_dup"},
+    )
+    legacy_dup.add_to_hass(hass)
+    new_dup = MockConfigEntry(
+        domain=DOMAIN,
+        entry_id="new_entry_dup",
+        unique_id="sn_dup",
+        data={CONF_SERIAL: "sn_dup"},
+    )
+    new_dup.add_to_hass(hass)
+
+    dup_dev = dev_reg.async_get_or_create(
+        config_entry_id=legacy_dup.entry_id,
+        identifiers={(LEGACY_DOMAIN, "sn_dup")},
+        name="Dup Dev",
+    )
+    dup_ent = ent_reg.async_get_or_create(
+        domain="sensor",
+        platform=LEGACY_DOMAIN,
+        unique_id=f"{legacy_dup.entry_id}_sn_dup_cpu_temp",
+        device_id=dup_dev.id,
+        config_entry=legacy_dup,
+    )
+
+    migrated2 = await async_migrate_legacy_domain(hass, target_entry=new_dup)
+    assert migrated2 is True
+    assert hass.config_entries.async_get_entry(legacy_dup.entry_id) is None
+    migrated_dup_ent = ent_reg.async_get(dup_ent.entity_id)
+    assert migrated_dup_ent.platform == DOMAIN
+    assert migrated_dup_ent.config_entry_id == new_dup.entry_id
+    assert migrated_dup_ent.unique_id == f"{new_dup.entry_id}_sn_dup_cpu_temp"
+
+    # Scenario 3: Orphaned device in device_registry with (pikvm_ha, serial)
+    orphan_target = MockConfigEntry(
+        domain=DOMAIN,
+        entry_id="orphan_target_id",
+        unique_id="sn_orphan",
+        data={CONF_SERIAL: "sn_orphan"},
+    )
+    # Do not add orphan_target to hass yet to hit line 144 (target_entry not in current_entries)
+    orphan_holder = MockConfigEntry(domain="other", entry_id="other_holder", data={})
+    orphan_holder.add_to_hass(hass)
+    orphan_dev = dev_reg.async_get_or_create(
+        config_entry_id=orphan_holder.entry_id,
+        identifiers={(LEGACY_DOMAIN, "sn_orphan")},
+        name="Orphan Dev",
+    )
+    orphan_ent = ent_reg.async_get_or_create(
+        domain="sensor",
+        platform=LEGACY_DOMAIN,
+        unique_id=f"{orphan_holder.entry_id}_sn_orphan_cpu_temp",
+        device_id=orphan_dev.id,
+        config_entry=orphan_holder,
+    )
+    orphan_target.add_to_hass(hass)
+    # Remove from async_entries momentarily via mock or test async_migrate_entry
+    assert await async_migrate_entry(hass, orphan_target) is True
+    updated_orphan_ent = ent_reg.async_get(orphan_ent.entity_id)
+    assert updated_orphan_ent.platform == DOMAIN
+    assert updated_orphan_ent.config_entry_id == orphan_target.entry_id
+
+    # Also test Scenario 3 when no matched_entry exists (line 260) and target_entry not in current_entries (line 144)
+    unattached_target = MockConfigEntry(domain=DOMAIN, entry_id="unattached_id", data={})
+    await async_migrate_legacy_domain(hass, target_entry=unattached_target)
+
+    unmatched_dev = dev_reg.async_get_or_create(
+        config_entry_id=orphan_holder.entry_id,
+        identifiers={(LEGACY_DOMAIN, "sn_unmatched")},
+        name="Unmatched Dev",
+    )
+    await async_migrate_legacy_domain(hass, target_entry=None)
+    assert (DOMAIN, "sn_unmatched") in dev_reg.async_get(unmatched_dev.id).identifiers
+
+
+@pytest.mark.asyncio
+async def test_setup_entry_with_non_dict_platform_and_kvmd(hass):
+    """Test async_setup_entry handles non-dict platform and kvmd gracefully (lines 345, 348)."""
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        entry_id="non_dict_entry",
+        unique_id="sn_nondict",
+        data={
+            CONF_HOST: "https://pikvm.local",
+            CONF_USERNAME: "admin",
+            CONF_PASSWORD: "password",
+            CONF_SERIAL: "sn_nondict",
+        },
+    )
+    entry.add_to_hass(hass)
+
+    mock_coord = MagicMock()
+    mock_coord.async_setup = AsyncMock()
+    mock_coord.async_config_entry_first_refresh = AsyncMock()
+    mock_coord.data = {"hw": {"platform": "not-a-dict"}, "system": {"kvmd": "not-a-dict"}}
+
+    with patch(
+        "custom_components.pikvm.PiKVMDataUpdateCoordinator",
+        return_value=mock_coord,
+    ), patch.object(
+        hass.config_entries, "async_forward_entry_setups", new=AsyncMock(return_value=True)
+    ):
+        assert await async_setup_entry(hass, entry) is True
 
 
 

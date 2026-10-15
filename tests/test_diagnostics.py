@@ -4,7 +4,7 @@ from unittest.mock import MagicMock
 import pytest
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
-from custom_components.pikvm_ha.const import (
+from custom_components.pikvm.const import (
     CONF_CERTIFICATE,
     CONF_HOST,
     CONF_PASSWORD,
@@ -13,7 +13,7 @@ from custom_components.pikvm_ha.const import (
     CONF_USERNAME,
     DOMAIN,
 )
-from custom_components.pikvm_ha.diagnostics import (
+from custom_components.pikvm.diagnostics import (
     async_get_config_entry_diagnostics,
     async_get_device_diagnostics,
 )

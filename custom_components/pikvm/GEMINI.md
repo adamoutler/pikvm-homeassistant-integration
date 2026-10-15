@@ -1,7 +1,7 @@
 # PiKVM Integration Internal Module Manifest (`pikvm_ha`)
 
 ## Module Overview
-This document specifies the internal contracts, dependency graph, and invariants for `custom_components/pikvm_ha`.
+This document specifies the internal contracts, dependency graph, and invariants for `custom_components/pikvm`.
 
 ## Dependency & Import Hierarchy
 1. `const.py` (leaf module - constants only)

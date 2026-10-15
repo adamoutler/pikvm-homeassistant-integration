@@ -10,9 +10,9 @@ from homeassistant.components.zeroconf import ZeroconfServiceInfo
 from homeassistant.data_entry_flow import FlowResultType
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
-from custom_components.pikvm_ha import config_flow
-from custom_components.pikvm_ha.cert_handler import PiKVMResponse
-from custom_components.pikvm_ha.const import (
+from custom_components.pikvm import config_flow
+from custom_components.pikvm.cert_handler import PiKVMResponse
+from custom_components.pikvm.const import (
     CONF_CERTIFICATE,
     CONF_HOST,
     CONF_MODEL,
@@ -25,14 +25,14 @@ from custom_components.pikvm_ha.const import (
     DOMAIN,
     MANUFACTURER,
 )
-from custom_components.pikvm_ha.options_flow import PiKVMOptionsFlowHandler
+from custom_components.pikvm.options_flow import PiKVMOptionsFlowHandler
 
 
 @pytest.fixture(autouse=True)
 def bypass_setup_entry():
     """Bypass entry setup during config flow tests."""
     with patch(
-        "custom_components.pikvm_ha.async_setup_entry",
+        "custom_components.pikvm.async_setup_entry",
         return_value=True,
     ):
         yield
@@ -50,10 +50,10 @@ async def test_config_flow_user_success(hass, pikvm_cert):
     response = PiKVMResponse(True, "v3", "pikvm-1234", "My PiKVM", None)
 
     with patch(
-        "custom_components.pikvm_ha.config_flow.fetch_serialized_cert",
+        "custom_components.pikvm.config_flow.fetch_serialized_cert",
         new=AsyncMock(return_value=pikvm_cert),
     ) as mock_fetch, patch(
-        "custom_components.pikvm_ha.config_flow.is_pikvm_device",
+        "custom_components.pikvm.config_flow.is_pikvm_device",
         new=AsyncMock(return_value=response),
     ) as mock_is_pikvm:
         result = await hass.config_entries.flow.async_init(
@@ -83,10 +83,10 @@ async def test_config_flow_user_cannot_connect(hass, pikvm_cert):
     failure = PiKVMResponse(False, None, None, None, "cannot_connect")
 
     with patch(
-        "custom_components.pikvm_ha.config_flow.fetch_serialized_cert",
+        "custom_components.pikvm.config_flow.fetch_serialized_cert",
         new=AsyncMock(return_value=pikvm_cert),
     ), patch(
-        "custom_components.pikvm_ha.config_flow.is_pikvm_device",
+        "custom_components.pikvm.config_flow.is_pikvm_device",
         new=AsyncMock(return_value=failure),
     ):
         result = await hass.config_entries.flow.async_init(
@@ -105,7 +105,7 @@ async def test_config_flow_user_initial_form(hass):
     translator = lambda key, default: default
 
     with patch(
-        "custom_components.pikvm_ha.config_flow.get_translations",
+        "custom_components.pikvm.config_flow.get_translations",
         new=AsyncMock(return_value=translator),
     ):
         result = await hass.config_entries.flow.async_init(
@@ -131,11 +131,11 @@ async def test_config_flow_user_discovery_retry_shows_form(hass, pikvm_cert):
 
     with (
         patch(
-            "custom_components.pikvm_ha.config_flow.perform_device_setup",
+            "custom_components.pikvm.config_flow.perform_device_setup",
             new=AsyncMock(return_value=(None, {"base": "cannot_connect"})),
         ),
         patch(
-            "custom_components.pikvm_ha.config_flow.get_translations",
+            "custom_components.pikvm.config_flow.get_translations",
             new=AsyncMock(return_value=lambda key, default: default),
         ),
     ):
@@ -158,7 +158,7 @@ async def test_perform_device_setup_missing_certificate(hass):
     }
 
     with patch(
-        "custom_components.pikvm_ha.config_flow.fetch_serialized_cert",
+        "custom_components.pikvm.config_flow.fetch_serialized_cert",
         new=AsyncMock(return_value=None),
     ):
         entry, errors = await config_flow.perform_device_setup(flow, user_input)
@@ -185,11 +185,11 @@ async def test_perform_device_setup_existing_entry_updates(hass, pikvm_cert):
 
     with (
         patch(
-            "custom_components.pikvm_ha.config_flow.fetch_serialized_cert",
+            "custom_components.pikvm.config_flow.fetch_serialized_cert",
             new=AsyncMock(return_value=pikvm_cert),
         ),
         patch(
-            "custom_components.pikvm_ha.config_flow.is_pikvm_device",
+            "custom_components.pikvm.config_flow.is_pikvm_device",
             new=AsyncMock(
                 return_value=PiKVMResponse(
                     True, "V3", "pikvm-serial", "My PiKVM", None
@@ -197,11 +197,11 @@ async def test_perform_device_setup_existing_entry_updates(hass, pikvm_cert):
             ),
         ),
         patch(
-            "custom_components.pikvm_ha.config_flow.find_existing_entry",
+            "custom_components.pikvm.config_flow.find_existing_entry",
             return_value=existing_entry,
         ),
         patch(
-            "custom_components.pikvm_ha.config_flow.update_existing_entry",
+            "custom_components.pikvm.config_flow.update_existing_entry",
             autospec=True,
         ) as update_mock,
     ):
@@ -226,7 +226,7 @@ async def test_perform_device_setup_unknown_error(hass):
     flow.hass = hass
 
     with patch(
-        "custom_components.pikvm_ha.config_flow.fetch_serialized_cert",
+        "custom_components.pikvm.config_flow.fetch_serialized_cert",
         new=AsyncMock(side_effect=ConnectionError),
     ):
         entry, errors = await config_flow.perform_device_setup(
@@ -250,11 +250,11 @@ async def test_perform_device_setup_cannot_connect_without_error(hass, pikvm_cer
 
     with (
         patch(
-            "custom_components.pikvm_ha.config_flow.fetch_serialized_cert",
+            "custom_components.pikvm.config_flow.fetch_serialized_cert",
             new=AsyncMock(return_value=pikvm_cert),
         ),
         patch(
-            "custom_components.pikvm_ha.config_flow.is_pikvm_device",
+            "custom_components.pikvm.config_flow.is_pikvm_device",
             new=AsyncMock(
                 return_value=PiKVMResponse(False, None, None, None, None)
             ),
@@ -292,11 +292,11 @@ async def test_perform_device_setup_localhost_name(hass, pikvm_cert):
 
     with (
         patch(
-            "custom_components.pikvm_ha.config_flow.fetch_serialized_cert",
+            "custom_components.pikvm.config_flow.fetch_serialized_cert",
             new=AsyncMock(return_value=pikvm_cert),
         ),
         patch(
-            "custom_components.pikvm_ha.config_flow.is_pikvm_device",
+            "custom_components.pikvm.config_flow.is_pikvm_device",
             new=AsyncMock(
                 return_value=SimpleNamespace(
                     success=True,
@@ -308,7 +308,7 @@ async def test_perform_device_setup_localhost_name(hass, pikvm_cert):
             ),
         ),
         patch(
-            "custom_components.pikvm_ha.config_flow.find_existing_entry",
+            "custom_components.pikvm.config_flow.find_existing_entry",
             return_value=None,
         ),
     ):
@@ -330,15 +330,15 @@ async def test_async_step_import_creates_entry(hass, pikvm_cert):
 
     with (
         patch(
-            "custom_components.pikvm_ha.config_flow.fetch_serialized_cert",
+            "custom_components.pikvm.config_flow.fetch_serialized_cert",
             new=AsyncMock(return_value=pikvm_cert),
         ),
         patch(
-            "custom_components.pikvm_ha.config_flow.is_pikvm_device",
+            "custom_components.pikvm.config_flow.is_pikvm_device",
             new=AsyncMock(return_value=response),
         ),
         patch(
-            "custom_components.pikvm_ha.config_flow.find_existing_entry",
+            "custom_components.pikvm.config_flow.find_existing_entry",
             return_value=None,
         ),
     ):
@@ -378,7 +378,7 @@ async def test_async_step_zeroconf_missing_serial(hass):
     )
 
     with patch(
-        "custom_components.pikvm_ha.config_flow.find_existing_entry",
+        "custom_components.pikvm.config_flow.find_existing_entry",
         return_value=None,
     ):
         result = await hass.config_entries.flow.async_init(
@@ -405,7 +405,7 @@ async def test_async_step_zeroconf_ipv6_address(hass):
     )
 
     with patch(
-        "custom_components.pikvm_ha.config_flow.find_existing_entry",
+        "custom_components.pikvm.config_flow.find_existing_entry",
         return_value=None,
     ):
         result = await hass.config_entries.flow.async_init(
@@ -440,11 +440,11 @@ async def test_async_step_zeroconf_existing_entry(hass):
 
     with (
         patch(
-            "custom_components.pikvm_ha.config_flow.find_existing_entry",
+            "custom_components.pikvm.config_flow.find_existing_entry",
             return_value=existing_entry,
         ),
         patch(
-            "custom_components.pikvm_ha.config_flow.update_existing_entry",
+            "custom_components.pikvm.config_flow.update_existing_entry",
             autospec=True,
         ) as update_mock,
     ):
@@ -473,7 +473,7 @@ async def test_async_step_zeroconf_new_device_menu(hass):
     )
 
     with patch(
-        "custom_components.pikvm_ha.config_flow.find_existing_entry",
+        "custom_components.pikvm.config_flow.find_existing_entry",
         return_value=None,
     ):
         result = await hass.config_entries.flow.async_init(
@@ -517,7 +517,7 @@ async def test_async_step_zeroconf_confirm_success(hass, pikvm_cert):
     }
 
     with patch(
-        "custom_components.pikvm_ha.config_flow.perform_device_setup",
+        "custom_components.pikvm.config_flow.perform_device_setup",
         new=AsyncMock(return_value=({"type": FlowResultType.CREATE_ENTRY}, None)),
     ):
         entry = await flow.async_step_zeroconf_confirm("add_device")
@@ -535,7 +535,7 @@ async def test_async_step_user_with_translation_dict(hass):
     }
 
     with patch(
-        "custom_components.pikvm_ha.config_flow.get_translations",
+        "custom_components.pikvm.config_flow.get_translations",
         new=AsyncMock(return_value=translations),
     ):
         result = await hass.config_entries.flow.async_init(
@@ -555,7 +555,7 @@ async def test_async_step_user_without_translations_uses_defaults(hass):
     """Default placeholders should be provided when translations are unavailable."""
 
     with patch(
-        "custom_components.pikvm_ha.config_flow.get_translations",
+        "custom_components.pikvm.config_flow.get_translations",
         new=AsyncMock(return_value=None),
     ):
         result = await hass.config_entries.flow.async_init(
@@ -582,7 +582,7 @@ async def test_async_step_user_discovery_password_cleared(hass):
     }
 
     with patch(
-        "custom_components.pikvm_ha.config_flow.get_translations",
+        "custom_components.pikvm.config_flow.get_translations",
         new=AsyncMock(return_value=lambda key, default: default),
     ):
         result = await flow.async_step_user()
@@ -625,7 +625,7 @@ async def test_reauth_flow_success(hass, pikvm_cert):
     success_resp = PiKVMResponse(True, "v3", "sn_reauth_123", "pikvm-pfsense", None)
 
     with patch(
-        "custom_components.pikvm_ha.config_flow.is_pikvm_device",
+        "custom_components.pikvm.config_flow.is_pikvm_device",
         new=AsyncMock(return_value=success_resp),
     ):
         result2 = await hass.config_entries.flow.async_configure(
@@ -713,7 +713,7 @@ async def test_reauth_flow_auth_failure(hass, pikvm_cert):
     fail_resp = PiKVMResponse(False, None, None, None, "Exception_HTTP403")
 
     with patch(
-        "custom_components.pikvm_ha.config_flow.is_pikvm_device",
+        "custom_components.pikvm.config_flow.is_pikvm_device",
         new=AsyncMock(return_value=fail_resp),
     ):
         result2 = await hass.config_entries.flow.async_configure(
@@ -759,7 +759,7 @@ async def test_reauth_flow_cannot_connect(hass, pikvm_cert):
     fail_resp = PiKVMResponse(False, None, None, None, "cannot_connect")
 
     with patch(
-        "custom_components.pikvm_ha.config_flow.is_pikvm_device",
+        "custom_components.pikvm.config_flow.is_pikvm_device",
         new=AsyncMock(return_value=fail_resp),
     ):
         result2 = await hass.config_entries.flow.async_configure(
@@ -832,7 +832,7 @@ async def test_reauth_flow_totp_repopulates_when_empty_and_fails(hass, pikvm_cer
         return PiKVMResponse(False, None, None, None, "Exception_HTTP403")
 
     with patch(
-        "custom_components.pikvm_ha.config_flow.is_pikvm_device",
+        "custom_components.pikvm.config_flow.is_pikvm_device",
         side_effect=mock_is_pikvm_device,
     ) as mock_device_auth:
         # User cleared the 2FA key in the UI, so CONF_TOTP is omitted in the submission
@@ -903,7 +903,7 @@ async def test_reauth_flow_clear_totp_with_space_workaround(hass, pikvm_cert):
         return PiKVMResponse(False, None, None, None, "Exception_HTTP403")
 
     with patch(
-        "custom_components.pikvm_ha.config_flow.is_pikvm_device",
+        "custom_components.pikvm.config_flow.is_pikvm_device",
         side_effect=mock_is_pikvm_device,
     ) as mock_device_auth:
         # User entered a space " " to prevent repopulating the default
@@ -1012,19 +1012,19 @@ async def test_perform_device_setup_parse_host_port_exception(hass, pikvm_cert):
 
     with (
         patch(
-            "custom_components.pikvm_ha.config_flow.fetch_serialized_cert",
+            "custom_components.pikvm.config_flow.fetch_serialized_cert",
             new=AsyncMock(return_value=pikvm_cert),
         ),
         patch(
-            "custom_components.pikvm_ha.config_flow.is_pikvm_device",
+            "custom_components.pikvm.config_flow.is_pikvm_device",
             new=AsyncMock(return_value=response),
         ),
         patch(
-            "custom_components.pikvm_ha.config_flow.find_existing_entry",
+            "custom_components.pikvm.config_flow.find_existing_entry",
             return_value=None,
         ),
         patch(
-            "custom_components.pikvm_ha.config_flow.parse_host_port",
+            "custom_components.pikvm.config_flow.parse_host_port",
             side_effect=Exception("Failed parsing host"),
         ),
     ):
@@ -1073,7 +1073,7 @@ async def test_reauth_confirm_parse_host_port_exception(hass, pikvm_cert):
     entry.add_to_hass(hass)
 
     with patch(
-        "custom_components.pikvm_ha.config_flow.parse_host_port",
+        "custom_components.pikvm.config_flow.parse_host_port",
         side_effect=Exception("Failed to parse host"),
     ):
         result = await hass.config_entries.flow.async_init(

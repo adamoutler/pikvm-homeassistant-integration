@@ -10,7 +10,7 @@ from pikvm_aio import (
     PiKVMTimeoutError,
 )
 
-from custom_components.pikvm_ha.cert_handler import (
+from custom_components.pikvm.cert_handler import (
     PiKVMResponse,
     fetch_serialized_cert,
     is_pikvm_device,
@@ -21,7 +21,7 @@ from custom_components.pikvm_ha.cert_handler import (
 async def test_fetch_serialized_cert_success(hass, pikvm_cert):
     """Test successfully fetching and serializing certificate."""
     with patch(
-        "custom_components.pikvm_ha.cert_handler.fetch_remote_cert",
+        "custom_components.pikvm.cert_handler.fetch_remote_cert",
         new=AsyncMock(return_value=pikvm_cert),
     ) as mock_fetch:
         result = await fetch_serialized_cert(hass, "https://pikvm.local")
@@ -33,7 +33,7 @@ async def test_fetch_serialized_cert_success(hass, pikvm_cert):
 async def test_fetch_serialized_cert_network_failure(hass):
     """Test certificate fetch fails gracefully on network timeout or error."""
     with patch(
-        "custom_components.pikvm_ha.cert_handler.fetch_remote_cert",
+        "custom_components.pikvm.cert_handler.fetch_remote_cert",
         new=AsyncMock(side_effect=TimeoutError("Timed out")),
     ):
         result = await fetch_serialized_cert(hass, "https://pikvm.local")
@@ -49,7 +49,7 @@ async def test_is_pikvm_device_success(hass, pikvm_cert):
     mock_device.name = "My PiKVM"
 
     with patch(
-        "custom_components.pikvm_ha.cert_handler.PiKVMClient.get_info",
+        "custom_components.pikvm.cert_handler.PiKVMClient.get_info",
         new=AsyncMock(return_value=mock_device),
     ):
         resp = await is_pikvm_device(
@@ -72,7 +72,7 @@ async def test_is_pikvm_device_fallbacks(hass, pikvm_cert):
     mock_device.get = MagicMock(return_value={})
 
     with patch(
-        "custom_components.pikvm_ha.cert_handler.PiKVMClient.get_info",
+        "custom_components.pikvm.cert_handler.PiKVMClient.get_info",
         new=AsyncMock(return_value=mock_device),
     ):
         resp = await is_pikvm_device(
@@ -94,7 +94,7 @@ async def test_is_pikvm_device_hass_none(pikvm_cert):
     mock_device.name = "Standalone PiKVM"
 
     with patch(
-        "custom_components.pikvm_ha.cert_handler.PiKVMClient.get_info",
+        "custom_components.pikvm.cert_handler.PiKVMClient.get_info",
         new=AsyncMock(return_value=mock_device),
     ):
         resp = await is_pikvm_device(
@@ -108,7 +108,7 @@ async def test_is_pikvm_device_hass_none(pikvm_cert):
 async def test_is_pikvm_device_auth_error(hass, pikvm_cert):
     """Test authentication error returning 403 response."""
     with patch(
-        "custom_components.pikvm_ha.cert_handler.PiKVMClient.get_info",
+        "custom_components.pikvm.cert_handler.PiKVMClient.get_info",
         new=AsyncMock(side_effect=PiKVMAuthenticationError("403 Forbidden")),
     ):
         resp = await is_pikvm_device(
@@ -121,7 +121,7 @@ async def test_is_pikvm_device_auth_error(hass, pikvm_cert):
 async def test_is_pikvm_device_timeout_error(hass, pikvm_cert):
     """Test timeout error returning timeout response."""
     with patch(
-        "custom_components.pikvm_ha.cert_handler.PiKVMClient.get_info",
+        "custom_components.pikvm.cert_handler.PiKVMClient.get_info",
         new=AsyncMock(side_effect=PiKVMTimeoutError("Timed out")),
     ):
         resp = await is_pikvm_device(
@@ -138,7 +138,7 @@ async def test_is_pikvm_device_timeout_error(hass, pikvm_cert):
 async def test_is_pikvm_device_connection_errors(hass, pikvm_cert, exception_cls):
     """Test connection and device errors returning cannot_connect response."""
     with patch(
-        "custom_components.pikvm_ha.cert_handler.PiKVMClient.get_info",
+        "custom_components.pikvm.cert_handler.PiKVMClient.get_info",
         new=AsyncMock(side_effect=exception_cls("Connection error")),
     ):
         resp = await is_pikvm_device(
@@ -151,7 +151,7 @@ async def test_is_pikvm_device_connection_errors(hass, pikvm_cert, exception_cls
 async def test_is_pikvm_device_generic_exception(hass, pikvm_cert):
     """Test unexpected exception returning cannot_connect response."""
     with patch(
-        "custom_components.pikvm_ha.cert_handler.PiKVMClient.get_info",
+        "custom_components.pikvm.cert_handler.PiKVMClient.get_info",
         new=AsyncMock(side_effect=RuntimeError("Unexpected error")),
     ):
         resp = await is_pikvm_device(
@@ -168,7 +168,7 @@ def test_cert_handler_no_verify_ssl_context_exception():
         "homeassistant.util.ssl.get_default_no_verify_context",
         side_effect=RuntimeError("SSL context error"),
     ):
-        import custom_components.pikvm_ha.cert_handler as cert_handler
+        import custom_components.pikvm.cert_handler as cert_handler
 
         importlib.reload(cert_handler)
         assert cert_handler._DEFAULT_NO_VERIFY_SSL_CONTEXT is None

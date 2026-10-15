@@ -6,7 +6,7 @@ services:
     image: homeassistant/home-assistant:latest
     volumes:
       # Mount the custom component directly into Home Assistant's custom_components directory
-      - ./custom_components/pikvm_ha:/config/custom_components/pikvm_ha:ro
+      - ./custom_components/pikvm:/config/custom_components/pikvm:ro
       # Mount a local config directory for Home Assistant data persistence
       - ./ha_config:/config
     ports:

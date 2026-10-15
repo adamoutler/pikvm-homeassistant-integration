@@ -1,5 +1,5 @@
 {
-  "domain": "pikvm_ha",
+  "domain": "pikvm",
   "name": "PiKVM",
   "codeowners": ["@adamoutler", "@gosdev"],
   "config_flow": true,
@@ -8,6 +8,7 @@
   "integration_type": "device",
   "iot_class": "local_polling",
   "issue_tracker": "https://github.com/adamoutler/pikvm-homeassistant-integration/issues",
+  "quality_scale": "gold",
   "requirements": [
     "pikvm-aio>=0.1.5",
     "pyotp>=2.8.0"

@@ -9,8 +9,8 @@ from homeassistant.const import CONF_PORT
 from homeassistant.data_entry_flow import FlowResultType
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
-from custom_components.pikvm_ha.cert_handler import PiKVMResponse
-from custom_components.pikvm_ha.const import (
+from custom_components.pikvm.cert_handler import PiKVMResponse
+from custom_components.pikvm.const import (
     CONF_CERTIFICATE,
     CONF_HOST,
     CONF_MODEL,
@@ -67,10 +67,10 @@ async def test_reconfigure_flow_success(hass, mock_entry):
     )
 
     with patch(
-        "custom_components.pikvm_ha.config_flow.fetch_serialized_cert",
+        "custom_components.pikvm.config_flow.fetch_serialized_cert",
         new=AsyncMock(return_value="new_cert"),
     ), patch(
-        "custom_components.pikvm_ha.config_flow.is_pikvm_device",
+        "custom_components.pikvm.config_flow.is_pikvm_device",
         new=AsyncMock(
             return_value=PiKVMResponse(
                 success=True,
@@ -110,10 +110,10 @@ async def test_reconfigure_flow_with_totp_success(hass, mock_entry):
     )
 
     with patch(
-        "custom_components.pikvm_ha.config_flow.fetch_serialized_cert",
+        "custom_components.pikvm.config_flow.fetch_serialized_cert",
         new=AsyncMock(return_value="new_cert"),
     ), patch(
-        "custom_components.pikvm_ha.config_flow.is_pikvm_device",
+        "custom_components.pikvm.config_flow.is_pikvm_device",
         new=AsyncMock(
             return_value=PiKVMResponse(
                 success=True,
@@ -170,7 +170,7 @@ async def test_reconfigure_flow_cannot_fetch_cert(hass, mock_entry):
     )
 
     with patch(
-        "custom_components.pikvm_ha.config_flow.fetch_serialized_cert",
+        "custom_components.pikvm.config_flow.fetch_serialized_cert",
         new=AsyncMock(return_value=""),
     ):
         result2 = await hass.config_entries.flow.async_configure(
@@ -196,10 +196,10 @@ async def test_reconfigure_flow_cannot_connect(hass, mock_entry):
     )
 
     with patch(
-        "custom_components.pikvm_ha.config_flow.fetch_serialized_cert",
+        "custom_components.pikvm.config_flow.fetch_serialized_cert",
         new=AsyncMock(return_value="new_cert"),
     ), patch(
-        "custom_components.pikvm_ha.config_flow.is_pikvm_device",
+        "custom_components.pikvm.config_flow.is_pikvm_device",
         new=AsyncMock(
             return_value=PiKVMResponse(
                 success=False,
@@ -233,10 +233,10 @@ async def test_reconfigure_flow_response_error(hass, mock_entry):
     )
 
     with patch(
-        "custom_components.pikvm_ha.config_flow.fetch_serialized_cert",
+        "custom_components.pikvm.config_flow.fetch_serialized_cert",
         new=AsyncMock(return_value="new_cert"),
     ), patch(
-        "custom_components.pikvm_ha.config_flow.is_pikvm_device",
+        "custom_components.pikvm.config_flow.is_pikvm_device",
         new=AsyncMock(
             return_value=PiKVMResponse(
                 success=False,
@@ -270,10 +270,10 @@ async def test_reconfigure_flow_unique_id_mismatch(hass, mock_entry):
     )
 
     with patch(
-        "custom_components.pikvm_ha.config_flow.fetch_serialized_cert",
+        "custom_components.pikvm.config_flow.fetch_serialized_cert",
         new=AsyncMock(return_value="new_cert"),
     ), patch(
-        "custom_components.pikvm_ha.config_flow.is_pikvm_device",
+        "custom_components.pikvm.config_flow.is_pikvm_device",
         new=AsyncMock(
             return_value=PiKVMResponse(
                 success=True,

@@ -133,7 +133,6 @@ def _get_msd_storage_attributes(data: Any) -> dict[str, Any]:
 CPU_TEMP_SENSOR_DESCRIPTION = PiKVMSensorEntityDescription(
     key="cpu_temp",
     translation_key="cpu_temp",
-    name="CPU Temp",
     device_class=SensorDeviceClass.TEMPERATURE,
     state_class=SensorStateClass.MEASUREMENT,
     native_unit_of_measurement=UnitOfTemperature.CELSIUS,
@@ -147,7 +146,6 @@ CPU_TEMP_SENSOR_DESCRIPTION = PiKVMSensorEntityDescription(
 CPU_UTILIZATION_SENSOR_DESCRIPTION = PiKVMSensorEntityDescription(
     key="cpu_utilization",
     translation_key="cpu_utilization",
-    name="CPU Utilization",
     state_class=SensorStateClass.MEASUREMENT,
     native_unit_of_measurement=PERCENTAGE,
     suggested_display_precision=1,
@@ -160,7 +158,6 @@ CPU_UTILIZATION_SENSOR_DESCRIPTION = PiKVMSensorEntityDescription(
 MEMORY_UTILIZATION_SENSOR_DESCRIPTION = PiKVMSensorEntityDescription(
     key="memory_utilization",
     translation_key="memory_utilization",
-    name="Memory Utilization",
     state_class=SensorStateClass.MEASUREMENT,
     native_unit_of_measurement=PERCENTAGE,
     suggested_display_precision=1,
@@ -174,7 +171,6 @@ MEMORY_UTILIZATION_SENSOR_DESCRIPTION = PiKVMSensorEntityDescription(
 FAN_SPEED_SENSOR_DESCRIPTION = PiKVMSensorEntityDescription(
     key="fan_speed",
     translation_key="fan_speed",
-    name="Fan Speed",
     state_class=SensorStateClass.MEASUREMENT,
     native_unit_of_measurement=REVOLUTIONS_PER_MINUTE,
     entity_category=EntityCategory.DIAGNOSTIC,
@@ -187,7 +183,6 @@ FAN_SPEED_SENSOR_DESCRIPTION = PiKVMSensorEntityDescription(
 MSD_STORAGE_SENSOR_DESCRIPTION = PiKVMSensorEntityDescription(
     key="msd_storage",
     translation_key="msd_storage",
-    name="MSD Storage",
     state_class=SensorStateClass.MEASUREMENT,
     native_unit_of_measurement=PERCENTAGE,
     suggested_display_precision=2,
@@ -223,16 +218,6 @@ class PiKVMSensor(PiKVMEntity, SensorEntity):
         super().__init__(coordinator, unique_id_base)
         self.entity_description = description
         self._attr_unique_id = f"{unique_id_base}_{description.key}"
-        self._attr_name = description.name
-
-    @property
-    def name(self) -> str | None:
-        """Return the entity name."""
-        if self._attr_name is not None:
-            return self._attr_name
-        if self.platform is None and self.entity_description is not None:
-            return self.entity_description.name
-        return super().name
 
     @property
     def native_value(self) -> StateType:

@@ -4,7 +4,7 @@ from unittest.mock import MagicMock
 import pytest
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
-from custom_components.pikvm_ha.const import (
+from custom_components.pikvm.const import (
     CONF_CERTIFICATE,
     CONF_HOST,
     CONF_PASSWORD,
@@ -12,7 +12,7 @@ from custom_components.pikvm_ha.const import (
     CONF_USERNAME,
     DOMAIN,
 )
-from custom_components.pikvm_ha.sensor import (
+from custom_components.pikvm.sensor import (
     PiKVMBaseSensor,
     PiKVMSensor,
     PiKVMSensorEntityDescription,
@@ -202,30 +202,16 @@ def test_lazy_import_sensors():
 
 
 def test_pikvm_sensor_name_resolution(mock_coordinator):
-    """Test PiKVMSensor name resolution paths (lines 231-235)."""
+    """Test PiKVMSensor translation_key and has_entity_name properties."""
     desc = PiKVMSensorEntityDescription(
         key="test_sensor",
-        name="Description Sensor Name",
+        translation_key="test_sensor",
         value_fn=lambda _: 10,
     )
     sensor = PiKVMSensor(mock_coordinator, "base_uid", desc)
-
-    # Line 231-232: self._attr_name is not None
-    assert sensor.name == "Description Sensor Name"
-
-    # Lines 233-234: self._attr_name is None, platform is None, entity_description is not None
-    sensor._attr_name = None
-    sensor.platform = None
-    assert sensor.name == "Description Sensor Name"
-
-    # Line 235: self._attr_name is None, platform is not None (falls through to super().name)
-    sensor.platform = MagicMock()
-    assert sensor.name == super(PiKVMSensor, sensor).name
-
-    # Line 235: entity_description is None and platform is None
-    sensor.platform = None
-    sensor.entity_description = None
-    assert sensor.name is None
+    assert sensor.unique_id == "base_uid_test_sensor"
+    assert sensor.translation_key == "test_sensor"
+    assert sensor.has_entity_name is True
 
 
 def test_pikvm_sensor_native_value(mock_coordinator):

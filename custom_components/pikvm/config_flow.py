@@ -21,6 +21,7 @@ except ImportError:
     from homeassistant.components.zeroconf import ZeroconfServiceInfo
 
 from pikvm_aio import parse_host_port
+from . import async_migrate_legacy_domain
 from .cert_handler import (
     PiKVMResponse,
     fetch_serialized_cert,
@@ -106,6 +107,9 @@ async def perform_device_setup(flow_handler, user_input):
             response.name,
         )
 
+        if flow_handler.hass is not None:
+            await async_migrate_legacy_domain(flow_handler.hass)
+
         # Check if the device is already configured now that we obtained serial number
         existing_entry = find_existing_entry(flow_handler, response.serial)
         if existing_entry:
@@ -182,6 +186,8 @@ class PiKVMConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             serial,
             discovery_info.properties.get("model"),
         )
+        if self.hass is not None:
+            await async_migrate_legacy_domain(self.hass)
         existing_entry = find_existing_entry(self, serial)
         existing_totp = ""
         if existing_entry:
@@ -246,6 +252,8 @@ class PiKVMConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
     async def async_step_user(self, user_input=None) -> config_entries.ConfigFlowResult:
         """Handle the initial step."""
+        if self.hass is not None:
+            await async_migrate_legacy_domain(self.hass)
         errors = self._errors
         self._errors = {}  # Reset errors after using them
 

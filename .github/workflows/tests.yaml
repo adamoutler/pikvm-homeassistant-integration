@@ -30,4 +30,4 @@ jobs:
 
       - name: Run tests with pytest
         run: |
-          pytest --cov=custom_components.pikvm_ha --cov-report=term-missing --cov-fail-under=80
+          pytest --cov=custom_components.pikvm --cov-report=term-missing --cov-fail-under=80
