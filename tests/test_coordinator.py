@@ -1,7 +1,7 @@
 """Tests for the PiKVM DataUpdateCoordinator."""
 
 from datetime import timedelta
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from homeassistant.const import CONF_SCAN_INTERVAL
@@ -223,7 +223,7 @@ async def test_coordinator_init_scan_interval_default(hass):
 )
 async def test_coordinator_hardware_health_undervoltage_critical(hass, throttling_data):
     """Test undervoltage issue created with CRITICAL severity when active now."""
-    entry = MockConfigEntry(domain=DOMAIN, entry_id="test_entry_uv_now")
+    entry = MockConfigEntry(domain=DOMAIN, entry_id="test_entry_uv_now", title="PiKVM")
     entry.add_to_hass(hass)
     coordinator = PiKVMDataUpdateCoordinator(
         hass=hass,
@@ -250,7 +250,7 @@ async def test_coordinator_hardware_health_undervoltage_critical(hass, throttlin
     assert issue is not None
     assert issue.severity == ir.IssueSeverity.CRITICAL
     assert issue.translation_key == "undervoltage"
-    assert issue.translation_placeholders == {"device_name": "pikvm.local"}
+    assert issue.translation_placeholders == {"device_name": "PiKVM"}
     assert issue.learn_more_url == "https://docs.pikvm.org/power/"
     assert issue.is_fixable is False
     assert issue.is_persistent is False
@@ -266,7 +266,7 @@ async def test_coordinator_hardware_health_undervoltage_critical(hass, throttlin
 )
 async def test_coordinator_hardware_health_undervoltage_warning_past(hass, throttling_data):
     """Test undervoltage issue created with WARNING severity when occurred in the past."""
-    entry = MockConfigEntry(domain=DOMAIN, entry_id="test_entry_uv_past")
+    entry = MockConfigEntry(domain=DOMAIN, entry_id="test_entry_uv_past", title="PiKVM")
     entry.add_to_hass(hass)
     coordinator = PiKVMDataUpdateCoordinator(
         hass=hass,
@@ -293,7 +293,7 @@ async def test_coordinator_hardware_health_undervoltage_warning_past(hass, throt
     assert issue is not None
     assert issue.severity == ir.IssueSeverity.WARNING
     assert issue.translation_key == "undervoltage"
-    assert issue.translation_placeholders == {"device_name": "pikvm.local"}
+    assert issue.translation_placeholders == {"device_name": "PiKVM"}
     assert issue.learn_more_url == "https://docs.pikvm.org/power/"
 
 
@@ -311,7 +311,7 @@ async def test_coordinator_hardware_health_undervoltage_warning_past(hass, throt
 )
 async def test_coordinator_hardware_health_throttling_issue_creation(hass, throttling_data):
     """Test throttling issue created with WARNING severity for active or past throttling."""
-    entry = MockConfigEntry(domain=DOMAIN, entry_id="test_entry_throttle")
+    entry = MockConfigEntry(domain=DOMAIN, entry_id="test_entry_throttle", title="PiKVM")
     entry.add_to_hass(hass)
     coordinator = PiKVMDataUpdateCoordinator(
         hass=hass,
@@ -338,7 +338,7 @@ async def test_coordinator_hardware_health_throttling_issue_creation(hass, throt
     assert issue is not None
     assert issue.severity == ir.IssueSeverity.WARNING
     assert issue.translation_key == "throttling"
-    assert issue.translation_placeholders == {"device_name": "pikvm.local"}
+    assert issue.translation_placeholders == {"device_name": "PiKVM"}
     assert issue.learn_more_url == "https://docs.pikvm.org/"
     assert issue.is_fixable is False
     assert issue.is_persistent is False
@@ -551,5 +551,62 @@ async def test_coordinator_ssl_and_malformed_health_data(hass):
     )
     issue_registry = ir.async_get(hass)
     assert issue_registry.async_get_issue(DOMAIN, "undervoltage_pikvm.local") is None
+
+
+@pytest.mark.asyncio
+async def test_coordinator_device_name_resolution(hass):
+    """Test coordinator.device_name resolution under various scenarios."""
+    from homeassistant.helpers import device_registry as dr
+    from homeassistant.helpers.device_registry import DeviceInfo
+
+    dev_reg = dr.async_get(hass)
+
+    # 1. No config entry, device_info, or data -> fallback "PiKVM"
+    coordinator = PiKVMDataUpdateCoordinator(
+        hass=hass,
+        url="https://192.168.1.50",
+        username="admin",
+        password="password",
+        totp="",
+        cert="",
+    )
+    assert coordinator.device_name == "PiKVM"
+
+    # 2. With data.name (and not localhost)
+    mock_data = MagicMock()
+    mock_data.name = "My Discovered KVM"
+    coordinator.data = mock_data
+    assert coordinator.device_name == "My Discovered KVM"
+
+    # 3. With generic data.name ("localhost") -> falls through
+    mock_data.name = "localhost"
+    assert coordinator.device_name == "PiKVM"
+
+    # 4. With device_info
+    coordinator.device_info = DeviceInfo(identifiers={(DOMAIN, "sn1")}, name="PiKVM V4 Plus")
+    assert coordinator.device_name == "PiKVM V4 Plus"
+
+    # 5. With config entry title
+    entry = MockConfigEntry(domain=DOMAIN, entry_id="test_entry_name", title="Custom Title")
+    entry.add_to_hass(hass)
+    coordinator.config_entry = entry
+    assert coordinator.device_name == "Custom Title"
+
+    # 6. With device registry entry (dev.name)
+    dev = dev_reg.async_get_or_create(
+        config_entry_id=entry.entry_id,
+        identifiers={(DOMAIN, "sn_dev")},
+        name="Device Registry Name",
+    )
+    assert coordinator.device_name == "Device Registry Name"
+
+    # 7. With user-customized device name (dev.name_by_user)
+    dev_reg.async_update_device(dev.id, name_by_user="User Custom Name")
+    assert coordinator.device_name == "User Custom Name"
+
+    # 8. Strips legacy clean_host suffix (e.g. "PiKVM (192.168.1.50)" -> "PiKVM")
+    dev_reg.async_update_device(dev.id, name_by_user=None, name="PiKVM (192.168.1.50)")
+    assert coordinator.device_name == "PiKVM"
+
 
 

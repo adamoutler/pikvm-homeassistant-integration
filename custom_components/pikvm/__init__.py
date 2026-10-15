@@ -291,7 +291,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     # Pre-emptively disambiguate generic entry titles before network I/O
     if entry.title in ("PiKVM", "pikvm", "localhost.localdomain", "", None):
-        hass.config_entries.async_update_entry(entry, title=f"PiKVM ({clean_host})")
+        hass.config_entries.async_update_entry(entry, title="PiKVM")
 
     # Retrieve the unique ID and serial number safely from the config entry
     stored_serial = entry.data.get(CONF_SERIAL)
@@ -316,7 +316,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             for ent in er.async_entries_for_device(ent_reg, dev.id, include_disabled_entities=True):
                 ent_reg.async_remove(ent.entity_id)
             dev_reg.async_remove_device(dev.id)
-        elif dev.name_by_user is None and dev.name in ("PiKVM", "pikvm", "localhost.localdomain", "", None):
+        elif dev.name_by_user is None and (
+            dev.name in ("PiKVM", "pikvm", "localhost.localdomain", "", None)
+            or (clean_host and dev.name and dev.name.endswith(f" ({clean_host})"))
+            or (dev.name and dev.name.startswith("PiKVM ("))
+        ):
             _LOGGER.info("Updating legacy device name for %s to %s", dev.id, entry.title)
             dev_reg.async_update_device(dev.id, name=entry.title)
 
@@ -363,16 +367,29 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     # If the entry has a custom title, honor it; otherwise disambiguate with discovered name or model
     discovered_name = getattr(coordinator.data, "name", None)
-    if entry.title and not (entry.title.startswith("PiKVM (") or entry.title in ("PiKVM", "pikvm")):
+    host_suffix = f" ({clean_host})"
+    has_legacy_host = bool(
+        clean_host
+        and entry.title
+        and (entry.title.endswith(host_suffix) or entry.title.startswith("PiKVM ("))
+    )
+
+    if entry.title and not (
+        has_legacy_host
+        or entry.title in ("PiKVM", "pikvm", "localhost", "localhost.localdomain")
+    ):
         device_name = entry.title
     elif discovered_name and discovered_name not in ("PiKVM", "pikvm", "localhost", "localhost.localdomain"):
-        device_name = f"{discovered_name} ({clean_host})"
+        device_name = discovered_name
     elif model and model not in ("PiKVM", "pikvm"):
-        device_name = f"PiKVM {model} ({clean_host})"
+        device_name = f"PiKVM {model}"
     else:
-        device_name = f"PiKVM ({clean_host})"
+        device_name = "PiKVM"
 
-    if entry.title != device_name and (entry.title.startswith("PiKVM (") or entry.title in ("PiKVM", "pikvm")):
+    if entry.title != device_name and (
+        has_legacy_host
+        or entry.title in ("PiKVM", "pikvm", "localhost", "localhost.localdomain", "", None)
+    ):
         hass.config_entries.async_update_entry(entry, title=device_name)
 
     coordinator.device_info = DeviceInfo(
@@ -388,7 +405,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     # Ensure device registry entry is in sync with latest device_name without deprecated async_get_device
     for dev in dr.async_entries_for_config_entry(dev_reg, entry.entry_id):
-        if dev.name_by_user is None and dev.name != device_name:
+        if dev.name_by_user is None and (
+            dev.name != device_name
+            or (clean_host and dev.name and dev.name.endswith(f" ({clean_host})"))
+            or (dev.name and dev.name.startswith("PiKVM ("))
+        ):
             dev_reg.async_update_device(dev.id, name=device_name)
 
     # Forward the setup to sensor and binary_sensor platforms

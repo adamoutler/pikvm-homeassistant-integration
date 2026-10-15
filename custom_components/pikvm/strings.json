@@ -141,12 +141,12 @@
   },
   "issues": {
     "undervoltage": {
-      "title": "PiKVM undervoltage detected ({device_name})",
-      "description": "PiKVM at {device_name} has detected an undervoltage condition. The device power supply or USB cable is unable to supply sufficient voltage, which can cause system instability and data corruption. Please verify that your power supply delivers at least 5.1V / 3A."
+      "title": "{device_name} undervoltage detected",
+      "description": "{device_name} has detected an undervoltage condition. The device power supply or USB cable is unable to supply sufficient voltage, which can cause system instability and data corruption. Please verify that your power supply delivers at least 5.1V / 3A."
     },
     "throttling": {
-      "title": "PiKVM CPU throttling active ({device_name})",
-      "description": "PiKVM at {device_name} has triggered CPU throttling due to thermal limits or power constraints. System performance and video streaming latency may be degraded. Please check that cooling fans and heatsinks are operating properly and ventilation is unobstructed."
+      "title": "{device_name} CPU throttling active",
+      "description": "{device_name} has triggered CPU throttling due to thermal limits or power constraints. System performance and video streaming latency may be degraded. Please check that cooling fans and heatsinks are operating properly and ventilation is unobstructed."
     }
   },
   "exceptions": {

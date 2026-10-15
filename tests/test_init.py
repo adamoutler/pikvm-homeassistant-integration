@@ -243,8 +243,8 @@ async def test_async_setup_entry_generic_title_disambiguation(hass, pikvm_cert, 
     ):
         result = await async_setup_entry(hass, entry)
         assert result is True
-        # Title updated with device name and clean host
-        assert entry.title == "pikvm.local (192.168.1.108)"
+        # Title updated with discovered device name
+        assert entry.title == "pikvm.local"
 
 
 @pytest.mark.asyncio
@@ -270,9 +270,9 @@ async def test_async_setup_entry_migrates_legacy_device_name(hass, pikvm_cert, m
     legacy_device = dev_reg.async_get_or_create(
         config_entry_id=entry.entry_id,
         identifiers={(DOMAIN, "sn_offline_105")},
-        name="PiKVM",
+        name="PiKVM (192.168.1.105)",
     )
-    assert legacy_device.name == "PiKVM"
+    assert legacy_device.name == "PiKVM (192.168.1.105)"
 
     from homeassistant.exceptions import ConfigEntryNotReady
     from pikvm_aio import PiKVMConnectionError
@@ -284,10 +284,10 @@ async def test_async_setup_entry_migrates_legacy_device_name(hass, pikvm_cert, m
         with pytest.raises(ConfigEntryNotReady):
             await async_setup_entry(hass, entry)
 
-    # Pre-emptive migration should have renamed the device in dev_reg before the refresh failed
+    # Pre-emptive migration should have renamed the legacy device in dev_reg to clean name before the refresh failed
     devices = dr.async_entries_for_config_entry(dev_reg, entry.entry_id)
     assert len(devices) == 1
-    assert devices[0].name == "PiKVM (192.168.1.105)"
+    assert devices[0].name == "PiKVM"
 
 
 @pytest.mark.asyncio
@@ -304,7 +304,7 @@ async def test_async_setup_entry_parse_host_port_exception(
     """Test fallback when parse_host_port raises an Exception (lines 63-64)."""
     entry = MockConfigEntry(
         domain=DOMAIN,
-        title="PiKVM",
+        title=f"PiKVM ({expected_clean_host})",
         unique_id="sn_12345",
         data={
             CONF_HOST: raw_host,
@@ -329,7 +329,7 @@ async def test_async_setup_entry_parse_host_port_exception(
     ):
         result = await async_setup_entry(hass, entry)
         assert result is True
-        assert f"({expected_clean_host})" in entry.title
+        assert entry.title == "pikvm.local"
 
 
 @pytest.mark.asyncio
@@ -487,14 +487,14 @@ async def test_async_setup_entry_naming_fallback_model(hass, pikvm_cert):
     ):
         result = await async_setup_entry(hass, entry)
         assert result is True
-        assert entry.title == "PiKVM V4 Plus (192.168.1.100)"
+        assert entry.title == "PiKVM V4 Plus"
         coordinator = hass.data[DOMAIN][entry.entry_id]
-        assert coordinator.device_info["name"] == "PiKVM V4 Plus (192.168.1.100)"
+        assert coordinator.device_info["name"] == "PiKVM V4 Plus"
 
 
 @pytest.mark.asyncio
 async def test_async_setup_entry_naming_fallback_generic(hass, pikvm_cert):
-    """Test device_name fallback to PiKVM ({clean_host}) (lines 141-142)."""
+    """Test device_name fallback to PiKVM (lines 141-142)."""
     entry = MockConfigEntry(
         domain=DOMAIN,
         title="PiKVM",
@@ -526,9 +526,9 @@ async def test_async_setup_entry_naming_fallback_generic(hass, pikvm_cert):
     ):
         result = await async_setup_entry(hass, entry)
         assert result is True
-        assert entry.title == "PiKVM (192.168.1.100)"
+        assert entry.title == "PiKVM"
         coordinator = hass.data[DOMAIN][entry.entry_id]
-        assert coordinator.device_info["name"] == "PiKVM (192.168.1.100)"
+        assert coordinator.device_info["name"] == "PiKVM"
 
 
 @pytest.mark.asyncio

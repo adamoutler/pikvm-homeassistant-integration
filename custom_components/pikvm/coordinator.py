@@ -13,6 +13,7 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_SCAN_INTERVAL
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryAuthFailed
+from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.issue_registry import (
@@ -108,6 +109,42 @@ class PiKVMDataUpdateCoordinator(DataUpdateCoordinator[PiKVMDeviceInfo]):
     async def async_setup(self) -> None:
         """Async setup method (retained for lifecycle compatibility)."""
 
+    @property
+    def device_name(self) -> str:
+        """Return the friendly device name for UI display and repair issues."""
+        raw_name: str | None = None
+        if self.config_entry:
+            dev_reg = dr.async_get(self.hass)
+            devices = dr.async_entries_for_config_entry(dev_reg, self.config_entry.entry_id)
+            for dev in devices:
+                if dev.name_by_user:
+                    return dev.name_by_user
+                if dev.name:
+                    raw_name = dev.name
+                    break
+            if not raw_name and self.config_entry.title:
+                raw_name = self.config_entry.title
+
+        if not raw_name and self.device_info and self.device_info.get("name"):
+            raw_name = str(self.device_info["name"])
+
+        if not raw_name and self.data and getattr(self.data, "name", None):
+            data_name = getattr(self.data, "name")
+            if data_name and data_name not in ("localhost", "localhost.localdomain"):
+                raw_name = str(data_name)
+
+        if not raw_name:
+            return "PiKVM"
+
+        # Strip legacy clean_host suffix if present (e.g. "PiKVM (192.168.1.50)" -> "PiKVM")
+        host_suffix = f" ({self.clean_host})"
+        if self.clean_host and raw_name.endswith(host_suffix):
+            cleaned = raw_name[: -len(host_suffix)].strip()
+            if cleaned:
+                return cleaned
+
+        return raw_name
+
     def _async_check_hardware_health(self, data: Any) -> None:
         """Monitor hardware undervoltage and throttling issues."""
         entry_id = self.config_entry.entry_id if self.config_entry else self.clean_host
@@ -161,7 +198,7 @@ class PiKVMDataUpdateCoordinator(DataUpdateCoordinator[PiKVMDeviceInfo]):
                 is_persistent=False,
                 severity=IssueSeverity.CRITICAL if is_under_voltage_now else IssueSeverity.WARNING,
                 translation_key="undervoltage",
-                translation_placeholders={"device_name": self.clean_host},
+                translation_placeholders={"device_name": self.device_name},
                 learn_more_url="https://docs.pikvm.org/power/",
             )
         else:
@@ -178,7 +215,7 @@ class PiKVMDataUpdateCoordinator(DataUpdateCoordinator[PiKVMDeviceInfo]):
                 is_persistent=False,
                 severity=IssueSeverity.WARNING,
                 translation_key="throttling",
-                translation_placeholders={"device_name": self.clean_host},
+                translation_placeholders={"device_name": self.device_name},
                 learn_more_url="https://docs.pikvm.org/",
             )
         else:
