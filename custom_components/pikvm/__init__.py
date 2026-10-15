@@ -222,8 +222,8 @@ async def async_migrate_legacy_domain(
             if target_entry is None or target_entry.entry_id != entry_id:
                 hass.async_create_task(hass.config_entries.async_setup(entry_id))
 
-    devices_map = getattr(dev_reg.devices, "data", dev_reg.devices)
-    for dev in list(devices_map.values()):
+    for item in list(dev_reg.devices):
+        dev = dev_reg.async_get(item) if isinstance(item, str) else item
         legacy_serials = [
             ident for dom, ident in dev.identifiers if dom == LEGACY_DOMAIN
         ]
