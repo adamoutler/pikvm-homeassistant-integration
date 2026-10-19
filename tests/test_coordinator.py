@@ -1,9 +1,11 @@
 """Tests for the PiKVM DataUpdateCoordinator."""
 
+import logging
+import ssl
 from datetime import timedelta
 from unittest.mock import AsyncMock, MagicMock, patch
-import pytest
 
+import pytest
 from homeassistant.const import CONF_SCAN_INTERVAL
 from homeassistant.exceptions import ConfigEntryAuthFailed
 from homeassistant.helpers import issue_registry as ir
@@ -81,6 +83,9 @@ async def test_coordinator_authentication_error(hass):
     with pytest.raises(ConfigEntryAuthFailed) as exc_info:
         await coordinator._async_update_data()
     assert "Invalid credentials or 2FA TOTP token required" in str(exc_info.value)
+    assert exc_info.value.translation_domain == DOMAIN
+    assert exc_info.value.translation_key == "authentication_error"
+    assert exc_info.value.translation_placeholders == {"host": "pikvm.local"}
 
     # Calling refresh should record failure
     await coordinator.async_refresh()
@@ -89,16 +94,54 @@ async def test_coordinator_authentication_error(hass):
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    "error_class,error_message,expected_fragment",
+    "error_class,error_message,expected_fragment,expected_key,expected_placeholders",
     [
-        (PiKVMConnectionError, "Connection refused", "Cannot connect to pikvm.local"),
-        (PiKVMTimeoutError, "Request timed out", "Connection timed out reaching pikvm.local"),
-        (PiKVMDeviceError, "Internal error in KVMD", "Error communicating with PiKVM at pikvm.local"),
-        (PiKVMError, "General error", "Error communicating with PiKVM at pikvm.local"),
+        (
+            PiKVMConnectionError,
+            "Connection refused",
+            "Cannot connect to pikvm.local",
+            "cannot_connect",
+            {"host": "pikvm.local"},
+        ),
+        (
+            PiKVMTimeoutError,
+            "Request timed out",
+            "Connection timed out reaching pikvm.local",
+            "timeout",
+            {"host": "pikvm.local"},
+        ),
+        (
+            TimeoutError,
+            "Builtin timeout",
+            "Connection timed out reaching pikvm.local",
+            "timeout",
+            {"host": "pikvm.local"},
+        ),
+        (
+            PiKVMDeviceError,
+            "Internal error in KVMD",
+            "Error communicating with PiKVM at pikvm.local",
+            "communication_error",
+            {"host": "pikvm.local", "error": "Internal error in KVMD"},
+        ),
+        (
+            PiKVMError,
+            "General error",
+            "Error communicating with PiKVM at pikvm.local",
+            "communication_error",
+            {"host": "pikvm.local", "error": "General error"},
+        ),
     ],
 )
-async def test_coordinator_communication_errors(hass, error_class, error_message, expected_fragment):
-    """Test communication and device errors raise sanitized UpdateFailed."""
+async def test_coordinator_communication_errors(
+    hass,
+    error_class,
+    error_message,
+    expected_fragment,
+    expected_key,
+    expected_placeholders,
+):
+    """Test communication and device errors raise sanitized UpdateFailed with translations."""
     coordinator = PiKVMDataUpdateCoordinator(
         hass=hass,
         url="https://pikvm.local",
@@ -113,11 +156,15 @@ async def test_coordinator_communication_errors(hass, error_class, error_message
     with pytest.raises(UpdateFailed) as exc_info:
         await coordinator._async_update_data()
     assert expected_fragment in str(exc_info.value)
+    assert exc_info.value.translation_domain == DOMAIN
+    assert exc_info.value.translation_key == expected_key
+    assert exc_info.value.translation_placeholders == expected_placeholders
 
 
 def test_coordinator_ssl_context_fallback():
     """Test fallback when get_default_no_verify_context raises an Exception (covers lines 34-35)."""
     import importlib
+
     import custom_components.pikvm.coordinator as coordinator_mod
 
     with patch(
@@ -520,8 +567,6 @@ async def test_coordinator_update_data_triggers_hardware_health(hass):
 @pytest.mark.asyncio
 async def test_coordinator_ssl_and_malformed_health_data(hass):
     """Test ssl.SSLError handling and non-dict throttling/text_flags/voltage_core in coordinator."""
-    import ssl
-
     coordinator = PiKVMDataUpdateCoordinator(
         hass=hass,
         url="https://pikvm.local",
@@ -532,8 +577,12 @@ async def test_coordinator_ssl_and_malformed_health_data(hass):
     )
 
     coordinator.client.get_info = AsyncMock(side_effect=ssl.SSLError("bad cert"))
-    with pytest.raises(UpdateFailed, match="SSL certificate validation failed"):
+    with pytest.raises(UpdateFailed) as exc_info:
         await coordinator._async_update_data()
+    assert "SSL certificate validation failed" in str(exc_info.value)
+    assert exc_info.value.translation_domain == DOMAIN
+    assert exc_info.value.translation_key == "ssl_certificate_error"
+    assert exc_info.value.translation_placeholders == {"host": "pikvm.local"}
 
     coordinator._async_check_hardware_health({"hw": {"health": {"throttling": "invalid"}}})
     coordinator._async_check_hardware_health(
@@ -607,6 +656,103 @@ async def test_coordinator_device_name_resolution(hass):
     # 8. Strips legacy clean_host suffix (e.g. "PiKVM (192.168.1.50)" -> "PiKVM")
     dev_reg.async_update_device(dev.id, name_by_user=None, name="PiKVM (192.168.1.50)")
     assert coordinator.device_name == "PiKVM"
+
+    # 9. Device entry with dev.name is None (exercises branch 122->119)
+    entry_noname = MockConfigEntry(domain=DOMAIN, entry_id="test_entry_noname", title="")
+    entry_noname.add_to_hass(hass)
+    coordinator_noname = PiKVMDataUpdateCoordinator(
+        hass=hass,
+        url="https://192.168.1.50",
+        username="admin",
+        password="password",
+        totp="",
+        cert="",
+        entry=entry_noname,
+    )
+    dev_reg.async_get_or_create(
+        config_entry_id=entry_noname.entry_id,
+        identifiers={(DOMAIN, "sn_noname1")},
+        name=None,
+    )
+    dev_reg.async_get_or_create(
+        config_entry_id=entry_noname.entry_id,
+        identifiers={(DOMAIN, "sn_noname2")},
+        name="Second Device",
+    )
+    assert coordinator_noname.device_name == "Second Device"
+
+    # 10. Device entry matching only suffix " (192.168.1.50)" resulting in cleaned == "" (exercises branch 143->146)
+    dev_reg.async_update_device(dev.id, name_by_user=None, name=" (192.168.1.50)")
+    assert coordinator.device_name == " (192.168.1.50)"
+
+
+@pytest.mark.asyncio
+async def test_coordinator_log_when_unavailable_auth_failure(hass, caplog):
+    """Verify log-when-unavailable compliance for authentication failure."""
+    coordinator = PiKVMDataUpdateCoordinator(
+        hass=hass,
+        url="https://pikvm.local",
+        username="admin",
+        password="bad_password",
+        totp="",
+        cert="",
+    )
+    coordinator.client.get_info = AsyncMock(
+        side_effect=PiKVMAuthenticationError("401 Unauthorized")
+    )
+
+    # First refresh: Home Assistant DataUpdateCoordinator logs 1 ERROR
+    caplog.clear()
+    await coordinator.async_refresh()
+    assert coordinator.last_update_success is False
+    error_logs = [record for record in caplog.records if record.levelname == "ERROR"]
+    assert len(error_logs) == 1
+
+    # Second refresh: coordinator.py demoted to debug, DataUpdateCoordinator suppresses duplicate log -> 0 ERROR logs
+    caplog.clear()
+    await coordinator.async_refresh()
+    assert coordinator.last_update_success is False
+    error_logs = [record for record in caplog.records if record.levelname == "ERROR"]
+    assert len(error_logs) == 0
+
+    # Third refresh (recovery): logs 0 ERROR logs
+    mock_data = MagicMock(spec=PiKVMDeviceInfo)
+    mock_data.raw = {}
+    coordinator.client.get_info = AsyncMock(return_value=mock_data)
+    caplog.clear()
+    await coordinator.async_refresh()
+    assert coordinator.last_update_success is True
+    error_logs = [record for record in caplog.records if record.levelname == "ERROR"]
+    assert len(error_logs) == 0
+
+
+@pytest.mark.asyncio
+async def test_coordinator_debug_logging_emits_diagnostics(hass, caplog):
+    """Verify debug logging captures diagnostic info when log level is DEBUG."""
+    caplog.set_level(logging.DEBUG)
+    coordinator = PiKVMDataUpdateCoordinator(
+        hass=hass,
+        url="https://pikvm.local",
+        username="admin",
+        password="bad_password",
+        totp="",
+        cert="",
+    )
+    coordinator.client.get_info = AsyncMock(
+        side_effect=PiKVMAuthenticationError("401 Unauthorized")
+    )
+
+    with pytest.raises(ConfigEntryAuthFailed):
+        await coordinator._async_update_data()
+
+    debug_logs = [
+        record.message
+        for record in caplog.records
+        if record.levelname == "DEBUG"
+        and "Authentication failed for PiKVM at https://pikvm.local" in record.message
+    ]
+    assert len(debug_logs) == 1
+
 
 
 

@@ -1,32 +1,31 @@
 """The PiKVM integration."""
 
-import asyncio
 import logging
 
-import voluptuous as vol
-
+import homeassistant.helpers.config_validation as cv
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import STATE_UNKNOWN, Platform
 from homeassistant.core import HomeAssistant
-import homeassistant.helpers.config_validation as cv
 from homeassistant.helpers import (
     device_registry as dr,
+)
+from homeassistant.helpers import (
     entity_registry as er,
+)
+from homeassistant.helpers import (
     issue_registry as ir,
 )
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.typing import UNDEFINED, ConfigType
-
-PLATFORMS: list[Platform] = [Platform.SENSOR, Platform.BINARY_SENSOR]
-
 from pikvm_aio import format_url, parse_host_port
+
 from .const import (
     CONF_CERTIFICATE,
     CONF_HOST,
     CONF_PASSWORD,
     CONF_SERIAL,
-    CONF_USERNAME,
     CONF_TOTP,
+    CONF_USERNAME,
     DEFAULT_PASSWORD,
     DEFAULT_USERNAME,
     DOMAIN,
@@ -34,25 +33,14 @@ from .const import (
     MANUFACTURER,
 )
 from .coordinator import PiKVMDataUpdateCoordinator
-from .entity import PiKVMEntity
 from .utils import get_nested_value
 
-_LOGGER = logging.getLogger(__name__)
+PLATFORMS: list[Platform] = [Platform.SENSOR, Platform.BINARY_SENSOR]
 
-# Define a minimal CONFIG_SCHEMA
-CONFIG_SCHEMA = vol.Schema(
-    {
-        DOMAIN: vol.Schema(
-            {
-                vol.Required(CONF_HOST): cv.url,
-                vol.Optional(CONF_USERNAME, default=DEFAULT_USERNAME): cv.string,
-                vol.Optional(CONF_PASSWORD, default=DEFAULT_PASSWORD): cv.string,
-                vol.Optional(CONF_TOTP, default=""): cv.string,
-            }
-        )
-    },
-    extra=vol.ALLOW_EXTRA,
-)
+type PiKVMConfigEntry = ConfigEntry[PiKVMDataUpdateCoordinator]
+
+CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
+_LOGGER = logging.getLogger(__name__)
 
 
 def _extract_serial_from_entry_or_device(
@@ -204,15 +192,11 @@ async def async_migrate_legacy_domain(
                 del entries_dict[entry_id]
                 object.__setattr__(legacy_entry, "domain", DOMAIN)
                 object.__setattr__(legacy_entry, "_integration_for_domain", None)
-                if hasattr(legacy_entry, "clear_state_cache"):
-                    legacy_entry.clear_state_cache()
-                if hasattr(legacy_entry, "clear_storage_cache"):
-                    legacy_entry.clear_storage_cache()
+                getattr(legacy_entry, "clear_state_cache", lambda: None)()
+                getattr(legacy_entry, "clear_storage_cache", lambda: None)()
                 entries_dict[entry_id] = legacy_entry
-                if hasattr(hass.config_entries, "_async_schedule_save"):
-                    hass.config_entries._async_schedule_save()
-                if hasattr(hass.config_entries, "async_update_issues"):
-                    hass.config_entries.async_update_issues()
+                getattr(hass.config_entries, "_async_schedule_save", lambda: None)()
+                getattr(hass.config_entries, "async_update_issues", lambda: None)()
 
             _cleanup_legacy_issues(hass, entry_id)
             if serial:
@@ -223,9 +207,11 @@ async def async_migrate_legacy_domain(
                 hass.async_create_task(hass.config_entries.async_setup(entry_id))
 
     for item in list(dev_reg.devices):
-        dev = dev_reg.async_get(item) if isinstance(item, str) else item
+        device_entry = dev_reg.async_get(item) if isinstance(item, str) else item
+        if device_entry is None:
+            continue
         legacy_serials = [
-            ident for dom, ident in dev.identifiers if dom == LEGACY_DOMAIN
+            ident for dom, ident in device_entry.identifiers if dom == LEGACY_DOMAIN
         ]
         if not legacy_serials:
             continue
@@ -233,16 +219,16 @@ async def async_migrate_legacy_domain(
         matched_entry = pikvm_by_serial.get(serial) or target_entry
         new_identifiers = {
             (DOMAIN if dom == LEGACY_DOMAIN else dom, ident)
-            for dom, ident in dev.identifiers
+            for dom, ident in device_entry.identifiers
         }
         if matched_entry is not None:
             dev_reg.async_update_device(
-                dev.id,
+                device_entry.id,
                 add_config_entry_id=matched_entry.entry_id,
                 new_identifiers=new_identifiers,
             )
             for entity_entry in er.async_entries_for_device(
-                ent_reg, dev.id, include_disabled_entities=True
+                ent_reg, device_entry.id, include_disabled_entities=True
             ):
                 if (
                     entity_entry.platform == LEGACY_DOMAIN
@@ -258,14 +244,14 @@ async def async_migrate_legacy_domain(
                         hass, ent_reg, entity_entry, matched_entry.entry_id, new_uid
                     )
         else:
-            dev_reg.async_update_device(dev.id, new_identifiers=new_identifiers)
+            dev_reg.async_update_device(device_entry.id, new_identifiers=new_identifiers)
         migrated_any = True
 
     _cleanup_legacy_issues(hass)
     return migrated_any
 
 
-async def async_migrate_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> bool:
+async def async_migrate_entry(hass: HomeAssistant, config_entry: PiKVMConfigEntry) -> bool:
     """Migrate old config entry versions or legacy domain."""
     await async_migrate_legacy_domain(hass, target_entry=config_entry)
     return True
@@ -277,16 +263,15 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
     return True
 
 
-async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+async def async_setup_entry(hass: HomeAssistant, entry: PiKVMConfigEntry) -> bool:
     """Set up PiKVM from a config entry."""
-    hass.data.setdefault(DOMAIN, {})
     await async_migrate_legacy_domain(hass, target_entry=entry)
 
     # Clean host for title disambiguation
     raw_host = entry.data.get(CONF_HOST, "")
     try:
         clean_host = parse_host_port(raw_host)[0]
-    except Exception:
+    except Exception:  # noqa: BLE001
         clean_host = raw_host or "unknown"
 
     # Pre-emptively disambiguate generic entry titles before network I/O
@@ -338,7 +323,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     await coordinator.async_config_entry_first_refresh()
 
     entry.runtime_data = coordinator
-    hass.data[DOMAIN][entry.entry_id] = coordinator
 
     # Retrieve hardware and system information safely
     raw_data = getattr(coordinator.data, "raw", None)
@@ -423,7 +407,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     return True
 
 
-async def _async_cleanup_devices(hass: HomeAssistant, entry: ConfigEntry) -> None:
+async def _async_cleanup_devices(hass: HomeAssistant, entry: PiKVMConfigEntry) -> None:
     """Remove devices that do not belong to this config entry or have no entities."""
     dev_reg = dr.async_get(hass)
     ent_reg = er.async_get(hass)
@@ -443,23 +427,91 @@ async def _async_cleanup_devices(hass: HomeAssistant, entry: ConfigEntry) -> Non
             dev_reg.async_remove_device(device.id)
 
 
-async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+async def async_unload_entry(hass: HomeAssistant, entry: PiKVMConfigEntry) -> bool:
     """Unload a config entry."""
-    unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
-    if unload_ok:
-        hass.data.get(DOMAIN, {}).pop(entry.entry_id, None)
-
-    return unload_ok
+    return await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
 
 
-async def update_listener(hass: HomeAssistant, entry: ConfigEntry) -> None:
+async def update_listener(hass: HomeAssistant, entry: PiKVMConfigEntry) -> None:
     """Handle options update."""
     await hass.config_entries.async_reload(entry.entry_id)
 
 
-async def async_remove_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
+async def async_remove_entry(hass: HomeAssistant, entry: PiKVMConfigEntry) -> None:
     """Handle removal of a config entry."""
-    await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
     ir.async_delete_issue(hass, DOMAIN, f"undervoltage_{entry.entry_id}")
     ir.async_delete_issue(hass, DOMAIN, f"throttling_{entry.entry_id}")
-    hass.data.get(DOMAIN, {}).pop(entry.entry_id, None)
+    if DOMAIN in hass.data:
+        hass.data[DOMAIN].pop(entry.entry_id, None)
+
+
+async def async_remove_config_entry_device(
+    hass: HomeAssistant,
+    config_entry: PiKVMConfigEntry,
+    device_entry: dr.DeviceEntry,
+) -> bool:
+    """Remove a config entry from a device if the device is stale."""
+    device_identifiers = getattr(device_entry, "identifiers", None)
+    if not device_identifiers:
+        _LOGGER.info(
+            "Allowing removal of PiKVM device %s (%s) with missing identifiers",
+            getattr(device_entry, "name", None) or "Unknown",
+            getattr(device_entry, "id", None) or "Unknown",
+        )
+        return True
+
+    active_serial = config_entry.data.get(CONF_SERIAL) or config_entry.unique_id
+    active_identifiers: set[tuple[str, str]] = set()
+
+    if active_serial:
+        raw_serial = str(active_serial).strip()
+        norm_serial = raw_serial.lower()
+        if raw_serial:
+            active_identifiers.add((DOMAIN, raw_serial))
+            active_identifiers.add((DOMAIN, norm_serial))
+            active_identifiers.add((LEGACY_DOMAIN, raw_serial))
+            active_identifiers.add((LEGACY_DOMAIN, norm_serial))
+
+    coordinator = getattr(config_entry, "runtime_data", None)
+    if (
+        coordinator
+        and getattr(coordinator, "device_info", None)
+        and "identifiers" in coordinator.device_info
+    ):
+        active_identifiers.update(coordinator.device_info["identifiers"])
+
+    raw_device_identifiers = (
+        set(device_identifiers)
+        if isinstance(device_identifiers, (set, list, tuple))
+        else set()
+    )
+
+    normalized_active: set[tuple[str, str]] = {
+        (str(d).strip().lower(), str(s).strip().lower())
+        for d, s in active_identifiers
+        if d and s
+    }
+    normalized_device: set[tuple[str, str]] = {
+        (str(item[0]).strip().lower(), str(item[1]).strip().lower())
+        for item in raw_device_identifiers
+        if isinstance(item, tuple) and len(item) == 2 and item[0] and item[1]
+    }
+
+    if raw_device_identifiers.intersection(active_identifiers) or normalized_device.intersection(normalized_active):
+        _LOGGER.warning(
+            "Cannot remove active PiKVM device %s (%s)",
+            getattr(device_entry, "name", None) or "Unknown",
+            getattr(device_entry, "id", None) or "Unknown",
+        )
+        return False
+
+    _LOGGER.info(
+        "Allowing removal of stale PiKVM device %s (%s)",
+        getattr(device_entry, "name", None) or "Unknown",
+        getattr(device_entry, "id", None) or "Unknown",
+    )
+    return True
+
+
+# Expose submodule for direct package access
+from . import config_flow as config_flow

@@ -12,6 +12,10 @@ from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.pikvm import config_flow
 from custom_components.pikvm.cert_handler import PiKVMResponse
+from custom_components.pikvm.config_flow import (
+    PiKVMConfigFlow,
+    perform_device_setup,
+)
 from custom_components.pikvm.const import (
     CONF_CERTIFICATE,
     CONF_HOST,
@@ -1051,7 +1055,7 @@ def test_config_flow_get_reauth_entry_fallback(hass):
         assert reauth_entry == entry
     finally:
         if orig_method is not None:
-            setattr(config_entries.ConfigFlow, "_get_reauth_entry", orig_method)
+            config_entries.ConfigFlow._get_reauth_entry = orig_method
 
 
 @pytest.mark.asyncio
@@ -1088,6 +1092,441 @@ async def test_reauth_confirm_parse_host_port_exception(hass, pikvm_cert):
     assert result["type"] == FlowResultType.FORM
     assert result["step_id"] == "reauth_confirm"
     assert result["description_placeholders"]["host"] == raw_host
+
+
+@pytest.mark.asyncio
+async def test_async_step_zeroconf_bytes_serial(hass):
+    """Test async_step_zeroconf handles bytes serial in discovery_info properties (line 166)."""
+    discovery_info = ZeroconfServiceInfo(
+        ip_address=IPv4Address("192.168.1.100"),
+        ip_addresses=[IPv4Address("192.168.1.100")],
+        port=443,
+        hostname="pikvm.local.",
+        type="_http._tcp.local.",
+        name="PiKVM._http._tcp.local.",
+        properties={"serial": b"sn_bytes_12345", "model": "V3"},
+    )
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN,
+        context={"source": config_entries.SOURCE_ZEROCONF},
+        data=discovery_info,
+    )
+    assert result["type"] is FlowResultType.MENU
+    assert result["step_id"] == "zeroconf_confirm"
+
+
+@pytest.mark.asyncio
+async def test_async_step_zeroconf_updates_existing_entry_host(hass):
+    """Test Zeroconf discovery updates existing entry host and aborts with already_configured."""
+    existing_entry = MockConfigEntry(
+        domain=DOMAIN,
+        unique_id="sn_zeroconf_update",
+        data={
+            CONF_HOST: "https://old-host.local",
+            CONF_USERNAME: "admin",
+            CONF_PASSWORD: "secret",
+            CONF_SERIAL: "sn_zeroconf_update",
+        },
+    )
+    existing_entry.add_to_hass(hass)
+
+    discovery_info = ZeroconfServiceInfo(
+        ip_address=IPv4Address("192.168.1.200"),
+        ip_addresses=[IPv4Address("192.168.1.200")],
+        port=443,
+        hostname="pikvm-new.local.",
+        type="_http._tcp.local.",
+        name="PiKVM._http._tcp.local.",
+        properties={"serial": "sn_zeroconf_update", "model": "V3"},
+    )
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN,
+        context={"source": config_entries.SOURCE_ZEROCONF},
+        data=discovery_info,
+    )
+    assert result["type"] is FlowResultType.ABORT
+    assert result["reason"] == "already_configured"
+    assert existing_entry.data[CONF_HOST] == "192.168.1.200"
+
+
+@pytest.mark.asyncio
+async def test_reauth_flow_unique_id_mismatch(hass, pikvm_cert):
+    """Test reauth flow aborts with unique_id_mismatched when serial differs (line 354)."""
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        title="PiKVM Lab",
+        unique_id="sn_original_123",
+        data={
+            CONF_HOST: "https://192.168.1.50",
+            CONF_USERNAME: "admin",
+            CONF_PASSWORD: "old_password",
+            CONF_SERIAL: "sn_original_123",
+            CONF_CERTIFICATE: pikvm_cert,
+        },
+    )
+    entry.add_to_hass(hass)
+
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN,
+        context={"source": config_entries.SOURCE_REAUTH, "entry_id": entry.entry_id},
+        data=entry.data,
+    )
+
+    with patch(
+        "custom_components.pikvm.config_flow.is_pikvm_device",
+        new=AsyncMock(
+            return_value=PiKVMResponse(
+                success=True,
+                model="v3",
+                serial="sn_different_456",
+                name="Other PiKVM",
+                error=None,
+            )
+        ),
+    ):
+        result2 = await hass.config_entries.flow.async_configure(
+            result["flow_id"],
+            user_input={
+                CONF_USERNAME: "admin",
+                CONF_PASSWORD: "new_password",
+                CONF_TOTP: "",
+            },
+        )
+        assert result2["type"] is FlowResultType.ABORT
+        assert result2["reason"] == "unique_id_mismatched"
+
+
+@pytest.mark.asyncio
+async def test_perform_device_setup_totp_whitespace_clears(hass, pikvm_cert):
+    """Test perform_device_setup strips whitespace-only TOTP secret to empty string."""
+    flow = PiKVMConfigFlow()
+    flow.hass = hass
+    flow.context = {}
+
+    with patch(
+        "custom_components.pikvm.config_flow.fetch_serialized_cert",
+        new=AsyncMock(return_value=pikvm_cert),
+    ), patch(
+        "custom_components.pikvm.config_flow.is_pikvm_device",
+        new=AsyncMock(
+            return_value=PiKVMResponse(
+                success=True,
+                model="v3",
+                serial="sn_totp_white",
+                name="PiKVM",
+                error=None,
+            )
+        ),
+    ):
+        result, errors = await perform_device_setup(flow, {
+            CONF_HOST: "https://pikvm.local",
+            CONF_USERNAME: "admin",
+            CONF_PASSWORD: "password",
+            CONF_TOTP: "   ",
+        })
+        assert errors is None
+        assert result is not None
+        assert result["type"] is FlowResultType.CREATE_ENTRY
+        assert result["data"][CONF_TOTP] == ""
+
+
+@pytest.mark.asyncio
+async def test_reauth_confirm_no_reauth_entry(hass):
+    """Test async_step_reauth_confirm when _get_reauth_entry returns None (line 373 branch)."""
+    flow = PiKVMConfigFlow()
+    flow.hass = hass
+
+    with patch.object(flow, "_get_reauth_entry", return_value=None):
+        result = await flow.async_step_reauth_confirm()
+        assert result["type"] is FlowResultType.FORM
+        assert result["step_id"] == "reauth_confirm"
+        assert result["description_placeholders"]["host"] == ""
+
+
+@pytest.mark.asyncio
+async def test_flow_hass_none_branches():
+    """Test perform_device_setup and async_step_zeroconf when hass is None (lines 104, 185, 244)."""
+    flow = PiKVMConfigFlow()
+    flow.context = {}
+    flow._async_current_entries = MagicMock(return_value=[])  # type: ignore[method-assign]
+    flow.async_set_unique_id = AsyncMock()  # type: ignore[method-assign]
+    flow.async_create_entry = MagicMock(return_value={"type": FlowResultType.CREATE_ENTRY})  # type: ignore[method-assign]
+
+    discovery_info = ZeroconfServiceInfo(
+        ip_address=IPv4Address("192.168.1.100"),
+        ip_addresses=[IPv4Address("192.168.1.100")],
+        port=443,
+        hostname="pikvm.local.",
+        type="_http._tcp.local.",
+        name="PiKVM._http._tcp.local.",
+        properties={"serial": "sn_nohass_1", "model": "V3"},
+    )
+    with patch.object(flow, "_abort_if_unique_id_configured"):
+        result = await flow.async_step_zeroconf(discovery_info)
+        assert result["type"] is FlowResultType.MENU
+        assert result["step_id"] == "zeroconf_confirm"
+
+    with patch(
+        "custom_components.pikvm.config_flow.fetch_serialized_cert",
+        new=AsyncMock(return_value="cert"),
+    ), patch(
+        "custom_components.pikvm.config_flow.is_pikvm_device",
+        new=AsyncMock(
+            return_value=PiKVMResponse(
+                success=True,
+                model="v3",
+                serial="sn_nohass_2",
+                name="PiKVM",
+                error=None,
+            )
+        ),
+    ):
+        result2, errors = await perform_device_setup(flow, {
+            CONF_HOST: "https://pikvm.local",
+            CONF_USERNAME: "admin",
+            CONF_PASSWORD: "password",
+            CONF_TOTP: "",
+        })
+        assert errors is None
+        assert result2 is not None
+        assert result2["type"] is FlowResultType.CREATE_ENTRY
+
+    result3 = await flow.async_step_user()
+    assert result3["type"] is FlowResultType.FORM
+    assert result3["step_id"] == "user"
+
+
+@pytest.mark.asyncio
+async def test_zeroconf_missing_ip_address_aborts_without_host_corruption(hass):
+    """Test that zeroconf discovery with ip_address=None aborts and does not corrupt existing host."""
+    existing_entry = MockConfigEntry(
+        domain=DOMAIN,
+        title="PiKVM Existing",
+        unique_id="sn_existing_123",
+        data={
+            CONF_HOST: "https://192.168.1.50",
+            CONF_USERNAME: "admin",
+            CONF_PASSWORD: "secret_password",
+            CONF_SERIAL: "sn_existing_123",
+            CONF_CERTIFICATE: "cert",
+            CONF_TOTP: "",
+        },
+    )
+    existing_entry.add_to_hass(hass)
+
+    service_info = ZeroconfServiceInfo(
+        ip_address=None,
+        ip_addresses=[],
+        port=443,
+        hostname="pikvm.local.",
+        type="_http._tcp.local.",
+        name="pikvm._http._tcp.local.",
+        properties={"serial": "sn_existing_123", "model": "V3"},
+    )
+
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN,
+        context={"source": config_entries.SOURCE_ZEROCONF},
+        data=service_info,
+    )
+
+    assert result["type"] is FlowResultType.ABORT
+    assert result["reason"] == "missing_serial_or_host"
+    assert existing_entry.data[CONF_HOST] == "https://192.168.1.50"
+
+
+@pytest.mark.asyncio
+async def test_zeroconf_host_none_string_aborts(hass):
+    """Test that zeroconf discovery where host is the literal string 'None' aborts."""
+    service_info = ZeroconfServiceInfo(
+        ip_address=IPv4Address("192.168.1.100"),
+        ip_addresses=[IPv4Address("192.168.1.100")],
+        port=443,
+        hostname="None",
+        type="_http._tcp.local.",
+        name="pikvm._http._tcp.local.",
+        properties={"serial": "sn_valid_123", "model": "V3"},
+    )
+
+    with patch.object(ZeroconfServiceInfo, "host", new="None"):
+        result = await hass.config_entries.flow.async_init(
+            DOMAIN,
+            context={"source": config_entries.SOURCE_ZEROCONF},
+            data=service_info,
+        )
+
+    assert result["type"] is FlowResultType.ABORT
+    assert result["reason"] == "missing_serial_or_host"
+
+
+@pytest.mark.asyncio
+async def test_zeroconf_async_step_add_device(hass, pikvm_cert):
+    """Test async_step_add_device proceeds to create entry."""
+    service_info = ZeroconfServiceInfo(
+        ip_address=IPv4Address("192.168.1.100"),
+        ip_addresses=[IPv4Address("192.168.1.100")],
+        port=443,
+        hostname="pikvm.local.",
+        type="_http._tcp.local.",
+        name="pikvm._http._tcp.local.",
+        properties={"serial": "sn_step_add_1", "model": "V3"},
+    )
+
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN,
+        context={"source": config_entries.SOURCE_ZEROCONF},
+        data=service_info,
+    )
+    assert result["type"] is FlowResultType.MENU
+    assert result["step_id"] == "zeroconf_confirm"
+    flow_id = result["flow_id"]
+
+    response = PiKVMResponse(True, "V3", "sn_step_add_1", "PiKVM Test", None)
+    with patch(
+        "custom_components.pikvm.config_flow.fetch_serialized_cert",
+        new=AsyncMock(return_value=pikvm_cert),
+    ), patch(
+        "custom_components.pikvm.config_flow.is_pikvm_device",
+        new=AsyncMock(return_value=response),
+    ):
+        result2 = await hass.config_entries.flow.async_configure(
+            flow_id,
+            user_input={"next_step_id": "add_device"},
+        )
+
+    assert result2["type"] is FlowResultType.CREATE_ENTRY
+    assert result2["title"] == "PiKVM Test"
+    assert result2["data"][CONF_SERIAL] == "sn_step_add_1"
+
+
+@pytest.mark.asyncio
+async def test_zeroconf_async_step_ignore(hass):
+    """Test async_step_ignore aborts the flow with 'ignored'."""
+    service_info = ZeroconfServiceInfo(
+        ip_address=IPv4Address("192.168.1.101"),
+        ip_addresses=[IPv4Address("192.168.1.101")],
+        port=443,
+        hostname="pikvm.local.",
+        type="_http._tcp.local.",
+        name="pikvm._http._tcp.local.",
+        properties={"serial": "sn_step_ignore_1", "model": "V3"},
+    )
+
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN,
+        context={"source": config_entries.SOURCE_ZEROCONF},
+        data=service_info,
+    )
+    assert result["type"] is FlowResultType.MENU
+    assert result["step_id"] == "zeroconf_confirm"
+    flow_id = result["flow_id"]
+
+    result2 = await hass.config_entries.flow.async_configure(
+        flow_id,
+        user_input={"next_step_id": "ignore"},
+    )
+    assert result2["type"] is FlowResultType.ABORT
+    assert result2["reason"] == "ignored"
+
+
+@pytest.mark.asyncio
+async def test_zeroconf_confirm_direct_dict_ignore(hass):
+    """Test async_step_zeroconf_confirm with dict user_input containing next_step_id='ignore'."""
+    flow = PiKVMConfigFlow()
+    flow.hass = hass
+    flow._discovery_info = {"serial": "sn_direct_ignore"}
+
+    result = await flow.async_step_zeroconf_confirm(user_input={"next_step_id": "ignore"})
+    assert result["type"] is FlowResultType.ABORT
+    assert result["reason"] == "ignored"
+
+    # Also test when _discovery_info is empty
+    flow._discovery_info = {}
+    result_empty = await flow.async_step_zeroconf_confirm(user_input={"next_step_id": "ignore"})
+    assert result_empty["type"] is FlowResultType.ABORT
+    assert result_empty["reason"] == "ignored"
+
+
+@pytest.mark.asyncio
+async def test_reauth_flow_serial_fallback_from_config_entry_data(hass, pikvm_cert):
+    """Test reauth flow verifies serial from config_entry.data when unique_id is None."""
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        title="PiKVM Legacy Entry",
+        unique_id=None,
+        data={
+            CONF_HOST: "https://192.168.1.50",
+            CONF_USERNAME: "admin",
+            CONF_PASSWORD: "original_password",
+            CONF_SERIAL: "sn_original_123",
+            CONF_CERTIFICATE: pikvm_cert,
+            CONF_TOTP: "",
+        },
+    )
+    entry.add_to_hass(hass)
+
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN,
+        context={"source": config_entries.SOURCE_REAUTH, "entry_id": entry.entry_id},
+        data=entry.data,
+    )
+
+    # 1. Imposter serial aborts with unique_id_mismatched
+    with patch(
+        "custom_components.pikvm.config_flow.is_pikvm_device",
+        new=AsyncMock(
+            return_value=PiKVMResponse(
+                success=True,
+                model="V3",
+                serial="sn_spoofed_999",
+                name="PiKVM Imposter",
+                error=None,
+            )
+        ),
+    ):
+        result_mismatch = await hass.config_entries.flow.async_configure(
+            result["flow_id"],
+            user_input={
+                CONF_USERNAME: "admin",
+                CONF_PASSWORD: "new_password",
+                CONF_TOTP: "",
+            },
+        )
+        assert result_mismatch["type"] is FlowResultType.ABORT
+        assert result_mismatch["reason"] == "unique_id_mismatched"
+
+    # 2. Matching serial (with whitespace and case difference) succeeds
+    result_reauth2 = await hass.config_entries.flow.async_init(
+        DOMAIN,
+        context={"source": config_entries.SOURCE_REAUTH, "entry_id": entry.entry_id},
+        data=entry.data,
+    )
+    with patch(
+        "custom_components.pikvm.config_flow.is_pikvm_device",
+        new=AsyncMock(
+            return_value=PiKVMResponse(
+                success=True,
+                model="V3",
+                serial="  SN_ORIGINAL_123  ",
+                name="PiKVM Original",
+                error=None,
+            )
+        ),
+    ):
+        result_success = await hass.config_entries.flow.async_configure(
+            result_reauth2["flow_id"],
+            user_input={
+                CONF_USERNAME: "admin",
+                CONF_PASSWORD: "new_password",
+                CONF_TOTP: "",
+            },
+        )
+        assert result_success["type"] is FlowResultType.ABORT
+        assert result_success["reason"] == "reauth_successful"
+        assert entry.data[CONF_PASSWORD] == "new_password"
+
+
+
 
 
 

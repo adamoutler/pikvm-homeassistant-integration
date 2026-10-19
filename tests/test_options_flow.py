@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 from homeassistant.const import CONF_SCAN_INTERVAL
-from homeassistant.data_entry_flow import FlowResultType
+from homeassistant.data_entry_flow import FlowResultType, InvalidData
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.pikvm.config_flow import PiKVMConfigFlow
@@ -96,4 +96,40 @@ async def test_get_options_flow(hass):
 
     flow = PiKVMConfigFlow.async_get_options_flow(config_entry)
     assert isinstance(flow, PiKVMOptionsFlowHandler)
-    assert flow.config_entry == config_entry
+
+
+@pytest.mark.asyncio
+async def test_options_flow_submits_invalid_scan_interval_fails(hass):
+    """Test options flow rejects scan interval out of 5..300 bounds."""
+    config_entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={"host": "https://192.168.1.100", CONF_SCAN_INTERVAL: 30},
+    )
+    config_entry.add_to_hass(hass)
+
+    result = await hass.config_entries.options.async_init(config_entry.entry_id)
+    assert result["type"] is FlowResultType.FORM
+
+    # Submit interval too low (< 5)
+    with pytest.raises(InvalidData) as exc_low:
+        await hass.config_entries.options.async_configure(
+            result["flow_id"],
+            user_input={CONF_SCAN_INTERVAL: 2},
+        )
+    assert "scan_interval" in str(exc_low.value)
+
+    # Submit interval too high (> 300)
+    with pytest.raises(InvalidData) as exc_high:
+        await hass.config_entries.options.async_configure(
+            result["flow_id"],
+            user_input={CONF_SCAN_INTERVAL: 500},
+        )
+    assert "scan_interval" in str(exc_high.value)
+
+
+def test_options_flow_handler_init_with_config_entry() -> None:
+    """Test options flow handler with explicit config entry initialization."""
+    mock_entry = MockConfigEntry(domain=DOMAIN)
+    handler = PiKVMOptionsFlowHandler(mock_entry)
+    assert handler._config_entry is mock_entry
+

@@ -1,33 +1,24 @@
 """Config flow for PiKVM integration."""
 
+from __future__ import annotations
+
 import binascii
-from collections.abc import Mapping
 import logging
-import re
+from collections.abc import Callable, Mapping
+from ipaddress import IPv6Address
 from typing import Any
 
+import homeassistant.helpers.config_validation as cv
 import pyotp
 import voluptuous as vol
-
-from homeassistant import config_entries
+from homeassistant import config_entries, data_entry_flow
+from homeassistant.components.zeroconf import ZeroconfServiceInfo
 from homeassistant.const import CONF_PORT
 from homeassistant.core import callback
-from homeassistant.helpers.aiohttp_client import async_get_clientsession
-import homeassistant.helpers.config_validation as cv
-
-try:
-    from homeassistant.helpers.service_info.zeroconf import ZeroconfServiceInfo
-except ImportError:
-    from homeassistant.components.zeroconf import ZeroconfServiceInfo
-
 from pikvm_aio import parse_host_port
+
 from . import async_migrate_legacy_domain
-from .cert_handler import (
-    PiKVMResponse,
-    fetch_serialized_cert,
-    format_url,
-    is_pikvm_device,
-)
+from .cert_handler import fetch_serialized_cert, is_pikvm_device
 from .const import (
     CONF_CERTIFICATE,
     CONF_HOST,
@@ -52,13 +43,16 @@ from .utils import (
 _LOGGER = logging.getLogger(__name__)
 
 
-async def perform_device_setup(flow_handler, user_input):
+async def perform_device_setup(
+    flow_handler: PiKVMConfigFlow,
+    user_input: dict[str, Any],
+) -> tuple[config_entries.ConfigFlowResult | None, dict[str, str] | None]:
     """Handle initial configuration setup for the configuration."""
-    errors = {}
+    errors: dict[str, str] = {}
     host = user_input[CONF_HOST]
     username = user_input[CONF_USERNAME]
     password = user_input[CONF_PASSWORD]
-    totp_secret = user_input.get(CONF_TOTP, "")
+    totp_secret = str(user_input.get(CONF_TOTP, "")).strip()
 
     _LOGGER.debug(
         "Entered perform_device_setup with URL %s, username %s", host, username
@@ -120,17 +114,14 @@ async def perform_device_setup(flow_handler, user_input):
             )
             return flow_handler.async_abort(reason="already_configured"), None
 
-        try:
-            clean_host = parse_host_port(host)[0]
-        except Exception:
-            clean_host = host
-
         device_name = response.name
         if device_name == "localhost.localdomain":
             device_name = MANUFACTURER
 
         entry_title = device_name if device_name else MANUFACTURER
 
+        user_input[CONF_TOTP] = totp_secret
+        assert response.model is not None
         user_input[CONF_MODEL] = response.model.lower()
         user_input[CONF_SERIAL] = response.serial
         await flow_handler.async_set_unique_id(response.serial)
@@ -141,7 +132,7 @@ async def perform_device_setup(flow_handler, user_input):
         )
         return config_flow_result, None
 
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         _LOGGER.error("Unexpected error during device setup: %s", e)
         errors["base"] = "unknown_error"
 
@@ -156,30 +147,45 @@ class PiKVMConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
     def __init__(self) -> None:
         """Initialize the PiKVMConfigFlow."""
+        self.context = {}
+        self.handler = DOMAIN
         self._errors: dict[str, str] = {}
-        self.translations = None
+        self.translations: Callable[[str, Any], Any] | None = None
         self._discovery_info: dict[str, str] = {}
 
     async def async_step_import(
-        self, user_input=None
+        self, user_input: dict[str, Any] | None = None
     ) -> config_entries.ConfigFlowResult:
         """Handle import."""
         return await self.async_step_user(user_input=user_input)
 
     # lets filter out the zeroconf discovery of ipv6 addresses
-    async def async_step_zeroconf(self, discovery_info: ZeroconfServiceInfo) -> config_entries.ConfigFlowResult:
+    async def async_step_zeroconf(
+        self, discovery_info: ZeroconfServiceInfo
+    ) -> config_entries.ConfigFlowResult:
         """Handle the ZeroConf discovery step."""
-        serial = discovery_info.properties.get("serial")
-        if serial:
-            serial = serial.lower()
-        host = discovery_info.host
-        if not serial or not host:
+        raw_serial = discovery_info.properties.get("serial")
+        if isinstance(raw_serial, bytes):
+            raw_serial = raw_serial.decode("utf-8", errors="ignore")
+        serial = str(raw_serial).strip().lower() if raw_serial else None
+        ip_addr = getattr(discovery_info, "ip_address", None)
+        host = str(discovery_info.host).strip() if discovery_info.host else None
+
+        if (
+            not serial
+            or not host
+            or serial == "none"
+            or host.lower() == "none"
+            or ip_addr is None
+        ):
             _LOGGER.debug("Discovered device with ZeroConf but missing serial or host")
             return self.async_abort(reason="missing_serial_or_host")
+
         # Filter out IPv6 addresses
-        if host.find(":") != -1:
-            _LOGGER.debug("Discovered device with ZeroConf but IPv6 address")
+        if ":" in host or isinstance(getattr(discovery_info, "ip_address", None), IPv6Address):
+            _LOGGER.debug("Discovered device with ZeroConf but IPv6 address: %s", host)
             return self.async_abort(reason="ipv6_address")
+
         _LOGGER.debug(
             "Discovered device with ZeroConf: host=%s, serial=%s, model=%s",
             host,
@@ -188,57 +194,69 @@ class PiKVMConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         )
         if self.hass is not None:
             await async_migrate_legacy_domain(self.hass)
+
+        await self.async_set_unique_id(serial)
+        try:
+            self._abort_if_unique_id_configured(updates={CONF_HOST: host})
+        except data_entry_flow.AbortFlow as ex:
+            return self.async_abort(
+                reason=ex.reason,
+                description_placeholders=ex.description_placeholders,
+            )
+
+        # Fallback check for legacy unmigrated entries or mock test setups
         existing_entry = find_existing_entry(self, serial)
-        existing_totp = ""
         if existing_entry:
             _LOGGER.debug(
                 "Device with serial %s already configured, updating existing entry",
                 serial,
             )
-            existing_username = existing_entry.data.get(CONF_USERNAME, DEFAULT_USERNAME)
-            existing_password = existing_entry.data.get(CONF_PASSWORD, DEFAULT_PASSWORD)
-            existing_totp = existing_entry.data.get(CONF_TOTP, "")
-            _LOGGER.debug(
-                "Updating existing entry with host=%s, username=%s, password=***",
-                host,
-                existing_username,
-            )
             update_existing_entry(
                 self.hass,
                 existing_entry,
-                {
-                    CONF_HOST: host,
-                    CONF_USERNAME: existing_username,
-                    CONF_PASSWORD: existing_password,
-                    CONF_TOTP: existing_totp,
-                    "serial": serial,  # Ensure serial is included
-                },
+                {CONF_HOST: host, "serial": serial},
             )
             return self.async_abort(reason="already_configured")
+
         # Offer options to add or ignore
         self._discovery_info = {
             CONF_HOST: host,
             CONF_USERNAME: DEFAULT_USERNAME,
             CONF_PASSWORD: DEFAULT_PASSWORD,
-            CONF_TOTP: existing_totp,
+            CONF_TOTP: "",
             "serial": serial,
         }
         return await self._show_zeroconf_menu()
 
-    async def _show_zeroconf_menu(self):
+    async def _show_zeroconf_menu(self) -> config_entries.ConfigFlowResult:
         """Show menu for ZeroConf discovered device."""
         return self.async_show_menu(
             step_id="zeroconf_confirm", menu_options=["add_device", "ignore"]
         )
 
+    async def async_step_add_device(
+        self, user_input: dict[str, Any] | None = None
+    ) -> config_entries.ConfigFlowResult:
+        """Handle user selecting to add the discovered ZeroConf device."""
+        return await self.async_step_zeroconf_confirm("add_device")
+
+    async def async_step_ignore(
+        self, user_input: dict[str, Any] | None = None
+    ) -> config_entries.ConfigFlowResult:
+        """Handle user selecting to ignore the discovered ZeroConf device."""
+        return await self.async_step_zeroconf_confirm("ignore")
+
     async def async_step_zeroconf_confirm(
-        self, user_input
+        self, user_input: str | dict[str, Any] | None = None
     ) -> config_entries.ConfigFlowResult:
         """Handle confirmation to add or ignore the ZeroConf device."""
-        if user_input == "ignore":
+        is_ignore = user_input == "ignore" or (
+            isinstance(user_input, dict) and user_input.get("next_step_id") == "ignore"
+        )
+        if is_ignore:
             _LOGGER.debug(
                 "Ignoring discovered device with serial %s",
-                self._discovery_info["serial"],
+                self._discovery_info.get("serial", "unknown"),
             )
             return self.async_abort(reason="ignored")
 
@@ -247,27 +265,26 @@ class PiKVMConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         if entry:
             return entry
 
-        self._errors = errors
+        self._errors = errors or {}
         return await self.async_step_user(user_input=self._discovery_info)
 
-    async def async_step_user(self, user_input=None) -> config_entries.ConfigFlowResult:
+    async def async_step_user(
+        self, user_input: dict[str, Any] | None = None
+    ) -> config_entries.ConfigFlowResult:
         """Handle the initial step."""
         if self.hass is not None:
             await async_migrate_legacy_domain(self.hass)
+            translations = await get_translations(
+                self.hass, self.hass.config.language, DOMAIN
+            )
+            if isinstance(translations, Mapping):
+                trans_dict: Mapping[str, Any] = translations
+                self.translations = lambda key, default: str(trans_dict.get(key, default))
+            elif callable(translations):
+                self.translations = translations
+
         errors = self._errors
         self._errors = {}  # Reset errors after using them
-
-        translations = await get_translations(
-            self.hass, self.hass.config.language, DOMAIN
-        )
-        if translations and not callable(translations):
-
-            def translate(key: str, default: str) -> str:
-                return translations.get(key, default)
-
-            self.translations = translate
-        else:
-            self.translations = translations
 
         if user_input is not None:
             _LOGGER.debug(
@@ -295,8 +312,8 @@ class PiKVMConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         data_schema = create_data_schema(user_input)
 
         def _translate(key: str, default: str) -> str:
-            if self.translations:
-                return self.translations(key, default)
+            if self.translations is not None:
+                return str(self.translations(key, default))
             return default
 
         return self.async_show_form(
@@ -323,8 +340,10 @@ class PiKVMConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         """Get the config entry being reauthenticated."""
         if hasattr(super(), "_get_reauth_entry"):
             return super()._get_reauth_entry()
-        entry_id = self.context.get("entry_id")
-        return self.hass.config_entries.async_get_entry(entry_id)
+        entry_id = str(self.context.get("entry_id") or "")
+        entry = self.hass.config_entries.async_get_entry(entry_id)
+        assert entry is not None
+        return entry
 
     async def async_step_reauth(
         self, entry_data: Mapping[str, Any]
@@ -358,6 +377,16 @@ class PiKVMConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     self.hass, host, username, password + totp_code, cert
                 )
                 if response.success:
+                    expected_serial = (
+                        reauth_entry.unique_id or reauth_entry.data.get(CONF_SERIAL)
+                    )
+                    if (
+                        response.serial
+                        and expected_serial
+                        and str(response.serial).strip().lower()
+                        != str(expected_serial).strip().lower()
+                    ):
+                        return self.async_abort(reason="unique_id_mismatched")
                     return self.async_update_reload_and_abort(
                         reauth_entry,
                         data={
@@ -382,7 +411,7 @@ class PiKVMConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             default_totp = reauth_entry.data.get(CONF_TOTP, "")
             try:
                 clean_host = parse_host_port(reauth_entry.data.get(CONF_HOST, ""))[0]
-            except Exception:
+            except Exception:  # noqa: BLE001
                 clean_host = reauth_entry.data.get(CONF_HOST, "")
 
         reauth_schema = vol.Schema(
@@ -415,7 +444,7 @@ class PiKVMConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
         if user_input is not None and reconfigure_entry is not None:
             host = user_input[CONF_HOST]
-            if CONF_PORT in user_input and user_input[CONF_PORT]:
+            if user_input.get(CONF_PORT):
                 port = user_input[CONF_PORT]
                 if f":{port}" not in host:
                     host = f"{host}:{port}"
@@ -496,4 +525,4 @@ class PiKVMConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         config_entry: config_entries.ConfigEntry,
     ) -> config_entries.OptionsFlow:
         """Create the options flow."""
-        return PiKVMOptionsFlowHandler(config_entry)
+        return PiKVMOptionsFlowHandler()

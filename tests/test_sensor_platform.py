@@ -1,7 +1,11 @@
-"""Tests for PiKVM sensor platform setup and base sensor classes."""
+"""Tests for PiKVM sensor platform setup and sensor entities."""
+
+from __future__ import annotations
 
 from unittest.mock import MagicMock
+
 import pytest
+from homeassistant.helpers import entity_registry as er
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.pikvm.const import (
@@ -13,11 +17,9 @@ from custom_components.pikvm.const import (
     DOMAIN,
 )
 from custom_components.pikvm.sensor import (
-    PiKVMBaseSensor,
     PiKVMSensor,
     PiKVMSensorEntityDescription,
     async_setup_entry,
-    lazy_import_sensors,
 )
 
 
@@ -51,37 +53,6 @@ def mock_coordinator():
     return coordinator
 
 
-def test_base_sensor_attributes(mock_coordinator):
-    """Test PiKVMBaseSensor attributes and properties."""
-    sensor = PiKVMBaseSensor(
-        mock_coordinator,
-        "base_uid",
-        "cpu_temp",
-        "CPU Temp",
-        unit="°C",
-        icon="mdi:thermometer",
-    )
-    assert sensor.unique_id == "base_uid_cpu_temp"
-    assert sensor.name == "CPU Temp"
-    assert sensor.unit_of_measurement == "°C"
-    assert sensor.icon == "mdi:thermometer"
-    assert sensor.extra_state_attributes == {"ip": "https://pikvm.local"}
-    assert sensor.has_entity_name is True
-
-
-def test_base_sensor_state_not_implemented(mock_coordinator):
-    """Test that PiKVMBaseSensor.state raises NotImplementedError."""
-    sensor = PiKVMBaseSensor(
-        mock_coordinator,
-        "base_uid",
-        "cpu_temp",
-        "CPU Temp",
-    )
-    with pytest.raises(NotImplementedError) as exc_info:
-        _ = sensor.state
-    assert "The state method must be implemented by the subclass" in str(exc_info.value)
-
-
 @pytest.mark.asyncio
 async def test_sensor_async_setup_entry_standard_sensors(hass, mock_coordinator):
     """Test async_setup_entry registers all 5 standard numeric sensors."""
@@ -98,8 +69,6 @@ async def test_sensor_async_setup_entry_standard_sensors(hass, mock_coordinator)
     )
     entry.add_to_hass(hass)
 
-    from homeassistant.helpers import entity_registry as er
-
     ent_reg = er.async_get(hass)
     stale_ent = ent_reg.async_get_or_create(
         "sensor",
@@ -107,7 +76,21 @@ async def test_sensor_async_setup_entry_standard_sensors(hass, mock_coordinator)
         f"{entry.entry_id}_unknown_cpu_temp",
         config_entry=entry,
     )
+    valid_ent = ent_reg.async_get_or_create(
+        "sensor",
+        DOMAIN,
+        f"{entry.entry_id}_pikvm_serial_99_cpu_temp",
+        config_entry=entry,
+    )
+    non_sensor_ent = ent_reg.async_get_or_create(
+        "binary_sensor",
+        DOMAIN,
+        f"{entry.entry_id}_other_binary",
+        config_entry=entry,
+    )
     assert ent_reg.async_get(stale_ent.entity_id) is not None
+    assert ent_reg.async_get(valid_ent.entity_id) is not None
+    assert ent_reg.async_get(non_sensor_ent.entity_id) is not None
 
     hass.data.setdefault(DOMAIN, {})[entry.entry_id] = mock_coordinator
 
@@ -115,6 +98,9 @@ async def test_sensor_async_setup_entry_standard_sensors(hass, mock_coordinator)
     await async_setup_entry(hass, entry, mock_add_entities)
 
     assert ent_reg.async_get(stale_ent.entity_id) is None
+    assert ent_reg.async_get(valid_ent.entity_id) is not None
+    assert ent_reg.async_get(non_sensor_ent.entity_id) is not None
+
     assert mock_add_entities.call_count == 1
     entities, update_before_add = mock_add_entities.call_args[0]
     assert update_before_add is True
@@ -126,6 +112,44 @@ async def test_sensor_async_setup_entry_standard_sensors(hass, mock_coordinator)
     assert "cpu_temp" in keys
     assert "fan_speed" in keys
     assert "msd_storage" in keys
+
+
+@pytest.mark.asyncio
+async def test_sensor_async_setup_entry_unknown_serial_does_not_purge_entities(
+    hass, mock_coordinator
+):
+    """Test async_setup_entry does not purge registered entities when serial is unknown."""
+    # Coordinator has no serial
+    mock_coordinator.data["hw"]["platform"]["serial"] = None
+
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        entry_id="mock_unknown_entry",
+        data={
+            CONF_HOST: "https://pikvm.local",
+            CONF_USERNAME: "admin",
+            CONF_PASSWORD: "secret_password",
+        },
+    )
+    entry.add_to_hass(hass)
+
+    ent_reg = er.async_get(hass)
+    existing_user_ent = ent_reg.async_get_or_create(
+        "sensor",
+        DOMAIN,
+        f"{entry.entry_id}_custom_serial_cpu_temp",
+        config_entry=entry,
+    )
+    assert ent_reg.async_get(existing_user_ent.entity_id) is not None
+
+    hass.data.setdefault(DOMAIN, {})[entry.entry_id] = mock_coordinator
+
+    mock_add_entities = MagicMock()
+    await async_setup_entry(hass, entry, mock_add_entities)
+
+    # The existing entity MUST NOT be removed because unique_id_base ends with "_unknown"
+    assert ent_reg.async_get(existing_user_ent.entity_id) is not None
+    assert mock_add_entities.call_count == 1
 
 
 @pytest.mark.asyncio
@@ -157,10 +181,9 @@ async def test_sensor_async_setup_entry_with_extras(hass, mock_coordinator):
     assert len(entities) == 5
 
 
-
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    "host_name,expected_prefix",
+    ("host_name", "expected_prefix"),
     [
         ("localhost.localdomain", "pikvm"),
         ("my.custom.pikvm", "my_custom_pikvm"),
@@ -193,26 +216,6 @@ async def test_sensor_device_name_formatting(
     assert len(entities) == 5
 
 
-def test_lazy_import_sensors():
-    """Test lazy_import_sensors returns dictionary of valid sensor classes."""
-    classes = lazy_import_sensors()
-    assert isinstance(classes, dict)
-    expected_keys = {
-        "cpu_temp",
-        "cpu_utilization",
-        "extra",
-        "fan_speed",
-        "memory_utilization",
-        "msd_drive",
-        "msd_enabled",
-        "msd_storage",
-        "throttling",
-    }
-    assert set(classes.keys()) == expected_keys
-    for key, cls in classes.items():
-        assert issubclass(cls, PiKVMBaseSensor)
-
-
 def test_pikvm_sensor_name_resolution(mock_coordinator):
     """Test PiKVMSensor translation_key and has_entity_name properties."""
     desc = PiKVMSensorEntityDescription(
@@ -227,7 +230,7 @@ def test_pikvm_sensor_name_resolution(mock_coordinator):
 
 
 def test_pikvm_sensor_native_value(mock_coordinator):
-    """Test PiKVMSensor native_value returns result of description value_fn (line 240)."""
+    """Test PiKVMSensor native_value returns result of description value_fn."""
     desc = PiKVMSensorEntityDescription(
         key="temp",
         name="Temp",
@@ -247,7 +250,7 @@ def test_pikvm_sensor_native_value(mock_coordinator):
 
 
 def test_pikvm_sensor_available_conditions(mock_coordinator):
-    """Test PiKVMSensor available property branches (lines 245-249)."""
+    """Test PiKVMSensor available property branches."""
     desc_with_fn = PiKVMSensorEntityDescription(
         key="test_avail",
         name="Test Avail",
@@ -256,19 +259,19 @@ def test_pikvm_sensor_available_conditions(mock_coordinator):
     )
     sensor = PiKVMSensor(mock_coordinator, "base_uid", desc_with_fn)
 
-    # Line 245-246: super().available is False (last_update_success is False)
+    # super().available is False (last_update_success is False)
     mock_coordinator.last_update_success = False
     assert sensor.available is False
 
-    # Lines 247-248: super().available is True, available_fn returns True
+    # super().available is True, available_fn returns True
     mock_coordinator.last_update_success = True
     assert sensor.available is True
 
-    # Lines 247-248: super().available is True, available_fn returns False
+    # super().available is True, available_fn returns False
     mock_coordinator.data = {}
     assert sensor.available is False
 
-    # Line 249: super().available is True, available_fn is None -> returns True
+    # super().available is True, available_fn is None -> returns True
     desc_no_fn = PiKVMSensorEntityDescription(
         key="test_no_fn",
         name="Test No Fn",
@@ -281,7 +284,7 @@ def test_pikvm_sensor_available_conditions(mock_coordinator):
 
 
 def test_pikvm_sensor_extra_state_attributes(mock_coordinator):
-    """Test PiKVMSensor extra_state_attributes with and without attributes_fn (lines 252-259)."""
+    """Test PiKVMSensor extra_state_attributes with and without attributes_fn."""
     # attributes_fn is None
     desc_no_attrs = PiKVMSensorEntityDescription(
         key="no_attrs",
@@ -292,7 +295,7 @@ def test_pikvm_sensor_extra_state_attributes(mock_coordinator):
     sensor_no_attrs = PiKVMSensor(mock_coordinator, "base_uid", desc_no_attrs)
     assert sensor_no_attrs.extra_state_attributes == {"ip": "https://pikvm.local"}
 
-    # attributes_fn returns empty dict (lines 257-258: if extra is False)
+    # attributes_fn returns empty dict (if extra is False)
     desc_empty_attrs = PiKVMSensorEntityDescription(
         key="empty_attrs",
         name="Empty Attrs",
@@ -302,7 +305,7 @@ def test_pikvm_sensor_extra_state_attributes(mock_coordinator):
     sensor_empty_attrs = PiKVMSensor(mock_coordinator, "base_uid", desc_empty_attrs)
     assert sensor_empty_attrs.extra_state_attributes == {"ip": "https://pikvm.local"}
 
-    # attributes_fn returns populated dict (lines 257-259: if extra is True -> update)
+    # attributes_fn returns populated dict (if extra is True -> update)
     desc_with_attrs = PiKVMSensorEntityDescription(
         key="with_attrs",
         name="With Attrs",
@@ -317,75 +320,9 @@ def test_pikvm_sensor_extra_state_attributes(mock_coordinator):
     }
 
 
-def test_base_sensor_unit_of_measurement_hierarchy(mock_coordinator):
-    """Test PiKVMBaseSensor unit_of_measurement resolution hierarchy (lines 294-303)."""
-    desc = PiKVMSensorEntityDescription(
-        key="test_unit",
-        name="Test Unit",
-        native_unit_of_measurement="RPM",
-        value_fn=lambda _: None,
-    )
-    sensor = PiKVMBaseSensor(
-        mock_coordinator,
-        "base_uid",
-        "test_unit",
-        unit="°C",
-        description=desc,
-    )
-
-    # Line 297-298: _attr_unit_of_measurement takes highest priority
-    assert sensor.unit_of_measurement == "°C"
-
-    # Lines 299-300: _attr_unit_of_measurement is None, _attr_native_unit_of_measurement is set
-    sensor._attr_unit_of_measurement = None
-    sensor._attr_native_unit_of_measurement = "%"
-    assert sensor.unit_of_measurement == "%"
-
-    # Lines 301-302: both attr units None, entity_description.native_unit_of_measurement used
-    sensor._attr_native_unit_of_measurement = None
-    assert sensor.unit_of_measurement == "RPM"
-
-    # Line 303: all units and entity_description are None -> returns None
-    sensor.entity_description = None
-    assert sensor.unit_of_measurement is None
-
-
-def test_base_sensor_subclass_state_delegates_to_native_value(mock_coordinator):
-    """Test PiKVMBaseSensor.state delegates to native_value for subclasses (lines 307-312)."""
-    class ConcreteTestSensor(PiKVMBaseSensor):
-        """Concrete subclass that does not override state."""
-
-    desc = PiKVMSensorEntityDescription(
-        key="subclass_test",
-        name="Subclass Test",
-        value_fn=lambda data: 77.7,
-    )
-    sensor = ConcreteTestSensor(
-        mock_coordinator,
-        "base_uid",
-        "subclass_test",
-        description=desc,
-    )
-
-    # Line 311: type(self) is not PiKVMBaseSensor -> returns self.native_value
-    assert sensor.state == 77.7
-
-
-def test_base_sensor_fallback_description_name(mock_coordinator):
-    """Test PiKVMBaseSensor fallback entity description name generation when name is None (line 279)."""
-    sensor = PiKVMBaseSensor(
-        mock_coordinator,
-        "base_uid",
-        "fan_controller_rpm",
-        name=None,
-    )
-    # sensor_type.replace("_", " ").title()
-    assert sensor.entity_description.name == "Fan Controller Rpm"
-
-
 @pytest.mark.asyncio
 async def test_sensor_async_setup_entry_with_runtime_data(hass, mock_coordinator):
-    """Test async_setup_entry uses config_entry.runtime_data when present (line 322)."""
+    """Test async_setup_entry uses config_entry.runtime_data when present."""
     entry = MockConfigEntry(
         domain=DOMAIN,
         entry_id="mock_runtime_data_entry",
@@ -407,4 +344,3 @@ async def test_sensor_async_setup_entry_with_runtime_data(hass, mock_coordinator
     assert mock_add_entities.call_count == 1
     entities, _ = mock_add_entities.call_args[0]
     assert len(entities) == 5
-

@@ -5,10 +5,10 @@ from __future__ import annotations
 from typing import Any
 
 from homeassistant.components.diagnostics import async_redact_data
-from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import device_registry as dr
 
+from . import PiKVMConfigEntry
 from .const import CONF_CERTIFICATE, CONF_PASSWORD, CONF_TOTP, DOMAIN
 
 TO_REDACT = {
@@ -42,7 +42,7 @@ TO_REDACT = {
 
 
 async def async_get_config_entry_diagnostics(
-    hass: HomeAssistant, config_entry: ConfigEntry
+    hass: HomeAssistant, config_entry: PiKVMConfigEntry
 ) -> dict[str, Any]:
     """Return redacted diagnostics for a config entry."""
     coordinator = (
@@ -71,7 +71,7 @@ async def async_get_config_entry_diagnostics(
 
 async def async_get_device_diagnostics(
     hass: HomeAssistant,
-    config_entry: ConfigEntry,
+    config_entry: PiKVMConfigEntry,
     device: dr.DeviceEntry,
 ) -> dict[str, Any]:
     """Return redacted diagnostics for a device."""

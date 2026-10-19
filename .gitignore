@@ -1,6 +1,6 @@
 __pycache__
 *.pyc
-.coverage
+.coverage*
 coverage.xml
 coverage.json
 .pytest_cache/

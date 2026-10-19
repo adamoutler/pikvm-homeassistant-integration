@@ -1,14 +1,18 @@
 """Tests for the PiKVM integration initialization and lifecycle."""
 
 from unittest.mock import AsyncMock, MagicMock, patch
+
 import pytest
 from homeassistant.config_entries import ConfigEntryState
-from homeassistant.helpers import device_registry as dr, entity_registry as er
+from homeassistant.helpers import device_registry as dr
+from homeassistant.helpers import entity_registry as er
+from pikvm_aio import PiKVMDeviceInfo
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.pikvm import (
     PLATFORMS,
     _async_cleanup_devices,
+    async_remove_config_entry_device,
     async_remove_entry,
     async_setup,
     async_setup_entry,
@@ -23,9 +27,9 @@ from custom_components.pikvm.const import (
     CONF_TOTP,
     CONF_USERNAME,
     DOMAIN,
+    LEGACY_DOMAIN,
     MANUFACTURER,
 )
-from pikvm_aio import PiKVMDeviceInfo
 
 
 @pytest.fixture
@@ -80,9 +84,9 @@ async def test_async_setup_entry_success(hass, pikvm_cert, mock_device_info):
     ) as mock_forward:
         result = await async_setup_entry(hass, entry)
         assert result is True
-        assert entry.entry_id in hass.data[DOMAIN]
+        assert entry.runtime_data is not None
 
-        coordinator = hass.data[DOMAIN][entry.entry_id]
+        coordinator = entry.runtime_data
         assert coordinator.device_info is not None
         device_info = coordinator.device_info
         assert device_info["identifiers"] == {(DOMAIN, "sn_12345")}
@@ -177,15 +181,13 @@ async def test_async_unload_entry(hass):
     """Test unloading config entry."""
     entry = MockConfigEntry(domain=DOMAIN, entry_id="test_unload_entry", data={})
     entry.add_to_hass(hass)
-
-    hass.data.setdefault(DOMAIN, {})[entry.entry_id] = "mock_coordinator"
+    entry.runtime_data = MagicMock()
 
     with patch.object(
         hass.config_entries, "async_unload_platforms", new=AsyncMock(return_value=True)
     ) as mock_unload:
         result = await async_unload_entry(hass, entry)
         assert result is True
-        assert entry.entry_id not in hass.data[DOMAIN]
         mock_unload.assert_awaited_once_with(entry, PLATFORMS)
 
 
@@ -202,18 +204,41 @@ async def test_update_listener(hass):
 
 @pytest.mark.asyncio
 async def test_async_remove_entry(hass):
-    """Test async_remove_entry cleanly unloads platforms and clears domain data."""
+    """Test async_remove_entry cleanly deletes repair issues without redundant platform unload."""
     entry = MockConfigEntry(domain=DOMAIN, entry_id="test_remove_entry", data={})
     entry.add_to_hass(hass)
 
-    hass.data.setdefault(DOMAIN, {})[entry.entry_id] = "mock_coordinator"
+    from homeassistant.helpers import issue_registry as ir
+    ir.async_create_issue(
+        hass, DOMAIN, f"undervoltage_{entry.entry_id}",
+        is_fixable=False, severity=ir.IssueSeverity.CRITICAL,
+        translation_key="undervoltage",
+    )
+    ir.async_create_issue(
+        hass, DOMAIN, f"throttling_{entry.entry_id}",
+        is_fixable=False, severity=ir.IssueSeverity.WARNING,
+        translation_key="throttling",
+    )
 
+    hass.data[DOMAIN] = {entry.entry_id: "legacy_entry_ref"}
     with patch.object(
-        hass.config_entries, "async_unload_platforms", new=AsyncMock(return_value=True)
+        hass.config_entries, "async_unload_platforms", new=AsyncMock()
     ) as mock_unload:
         await async_remove_entry(hass, entry)
-        assert entry.entry_id not in hass.data[DOMAIN]
-        mock_unload.assert_awaited_once_with(entry, PLATFORMS)
+        mock_unload.assert_not_called()
+
+    assert entry.entry_id not in hass.data[DOMAIN]
+    issue_reg = ir.async_get(hass)
+    assert issue_reg.async_get_issue(DOMAIN, f"undervoltage_{entry.entry_id}") is None
+    assert issue_reg.async_get_issue(DOMAIN, f"throttling_{entry.entry_id}") is None
+
+
+@pytest.mark.asyncio
+async def test_async_remove_entry_when_domain_not_in_hass_data(hass):
+    """Test async_remove_entry when DOMAIN is not present in hass.data."""
+    entry = MockConfigEntry(domain=DOMAIN, entry_id="clean_remove")
+    hass.data.pop(DOMAIN, None)
+    await async_remove_entry(hass, entry)
 
 
 @pytest.mark.asyncio
@@ -277,12 +302,14 @@ async def test_async_setup_entry_migrates_legacy_device_name(hass, pikvm_cert, m
     from homeassistant.exceptions import ConfigEntryNotReady
     from pikvm_aio import PiKVMConnectionError
 
-    with patch(
-        "custom_components.pikvm.coordinator.PiKVMClient.get_info",
-        side_effect=PiKVMConnectionError("Cannot connect"),
+    with (
+        patch(
+            "custom_components.pikvm.coordinator.PiKVMClient.get_info",
+            side_effect=PiKVMConnectionError("Cannot connect"),
+        ),
+        pytest.raises(ConfigEntryNotReady),
     ):
-        with pytest.raises(ConfigEntryNotReady):
-            await async_setup_entry(hass, entry)
+        await async_setup_entry(hass, entry)
 
     # Pre-emptive migration should have renamed the legacy device in dev_reg to clean name before the refresh failed
     devices = dr.async_entries_for_config_entry(dev_reg, entry.entry_id)
@@ -413,7 +440,7 @@ async def test_async_setup_entry_raw_data_fallback_dict(hass, pikvm_cert):
     ):
         result = await async_setup_entry(hass, entry)
         assert result is True
-        coordinator = hass.data[DOMAIN][entry.entry_id]
+        coordinator = entry.runtime_data
         assert coordinator.device_info["model"] == "V3-Hat"
 
 
@@ -449,7 +476,7 @@ async def test_async_setup_entry_raw_data_fallback_non_dict(hass, pikvm_cert):
     ):
         result = await async_setup_entry(hass, entry)
         assert result is True
-        coordinator = hass.data[DOMAIN][entry.entry_id]
+        coordinator = entry.runtime_data
         assert coordinator.device_info["model"] == "CustomModel"
 
 
@@ -488,7 +515,7 @@ async def test_async_setup_entry_naming_fallback_model(hass, pikvm_cert):
         result = await async_setup_entry(hass, entry)
         assert result is True
         assert entry.title == "PiKVM V4 Plus"
-        coordinator = hass.data[DOMAIN][entry.entry_id]
+        coordinator = entry.runtime_data
         assert coordinator.device_info["name"] == "PiKVM V4 Plus"
 
 
@@ -527,7 +554,7 @@ async def test_async_setup_entry_naming_fallback_generic(hass, pikvm_cert):
         result = await async_setup_entry(hass, entry)
         assert result is True
         assert entry.title == "PiKVM"
-        coordinator = hass.data[DOMAIN][entry.entry_id]
+        coordinator = entry.runtime_data
         assert coordinator.device_info["name"] == "PiKVM"
 
 
@@ -638,7 +665,6 @@ async def test_migrate_legacy_domain_in_place_and_cross_entry_and_orphaned(hass)
         async_migrate_entry,
         async_migrate_legacy_domain,
     )
-    from custom_components.pikvm.const import LEGACY_DOMAIN
 
     dev_reg = dr.async_get(hass)
     ent_reg = er.async_get(hass)
@@ -796,6 +822,428 @@ async def test_setup_entry_with_non_dict_platform_and_kvmd(hass):
         hass.config_entries, "async_forward_entry_setups", new=AsyncMock(return_value=True)
     ):
         assert await async_setup_entry(hass, entry) is True
+
+
+@pytest.mark.asyncio
+async def test_async_remove_config_entry_device_active_device(hass):
+    """Test async_remove_config_entry_device returns False for an active device."""
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        unique_id="sn_active_123",
+        data={CONF_SERIAL: "sn_active_123"},
+    )
+    entry.add_to_hass(hass)
+    dev_reg = dr.async_get(hass)
+    device = dev_reg.async_get_or_create(
+        config_entry_id=entry.entry_id,
+        identifiers={(DOMAIN, "sn_active_123")},
+    )
+    can_remove = await async_remove_config_entry_device(hass, entry, device)
+    assert can_remove is False
+
+
+@pytest.mark.asyncio
+async def test_async_remove_config_entry_device_legacy_domain(hass):
+    """Test async_remove_config_entry_device returns False for an active legacy device."""
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        unique_id="sn_legacy_123",
+        data={CONF_SERIAL: "sn_legacy_123"},
+    )
+    entry.add_to_hass(hass)
+    dev_reg = dr.async_get(hass)
+    device = dev_reg.async_get_or_create(
+        config_entry_id=entry.entry_id,
+        identifiers={(LEGACY_DOMAIN, "sn_legacy_123")},
+    )
+    can_remove = await async_remove_config_entry_device(hass, entry, device)
+    assert can_remove is False
+
+
+@pytest.mark.asyncio
+async def test_async_remove_config_entry_device_stale_device(hass):
+    """Test async_remove_config_entry_device returns True for a stale device."""
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        unique_id="sn_current",
+        data={CONF_SERIAL: "sn_current"},
+    )
+    entry.add_to_hass(hass)
+    dev_reg = dr.async_get(hass)
+    stale_device = dev_reg.async_get_or_create(
+        config_entry_id=entry.entry_id,
+        identifiers={(DOMAIN, "sn_stale_999")},
+    )
+    can_remove = await async_remove_config_entry_device(hass, entry, stale_device)
+    assert can_remove is True
+
+
+@pytest.mark.asyncio
+async def test_async_remove_config_entry_device_no_serial(hass):
+    """Test async_remove_config_entry_device returns True when entry has no serial or unique_id."""
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        unique_id="",
+        data={},
+    )
+    entry.add_to_hass(hass)
+    dev_reg = dr.async_get(hass)
+    device = dev_reg.async_get_or_create(
+        config_entry_id=entry.entry_id,
+        identifiers={(DOMAIN, "sn_unknown")},
+    )
+    can_remove = await async_remove_config_entry_device(hass, entry, device)
+    assert can_remove is True
+
+
+@pytest.mark.asyncio
+async def test_async_remove_config_entry_device_runtime_data_coordinator(hass):
+    """Test async_remove_config_entry_device incorporates identifiers from coordinator.device_info."""
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        unique_id="",
+        data={},
+    )
+    mock_coord = MagicMock()
+    mock_coord.device_info = {"identifiers": {(DOMAIN, "coord_serial_123")}}
+    entry.runtime_data = mock_coord
+    entry.add_to_hass(hass)
+
+    dev_reg = dr.async_get(hass)
+    active_device = dev_reg.async_get_or_create(
+        config_entry_id=entry.entry_id,
+        identifiers={(DOMAIN, "coord_serial_123")},
+    )
+    assert await async_remove_config_entry_device(hass, entry, active_device) is False
+
+
+@pytest.mark.asyncio
+async def test_async_unload_entry_failure(hass):
+    """Test async_unload_entry returns False when async_unload_platforms fails."""
+    entry = MockConfigEntry(domain=DOMAIN, data={})
+    entry.add_to_hass(hass)
+    with patch.object(
+        hass.config_entries, "async_unload_platforms", new=AsyncMock(return_value=False)
+    ):
+        result = await async_unload_entry(hass, entry)
+        assert result is False
+
+
+@pytest.mark.asyncio
+async def test_extract_serial_from_device_non_matching_identifier(hass):
+    """Test _extract_serial_from_entry_or_device handles non-matching domains and empty ident."""
+    from custom_components.pikvm import _extract_serial_from_entry_or_device
+
+    entry = MockConfigEntry(domain=DOMAIN, unique_id="", data={})
+    entry.add_to_hass(hass)
+    dev_reg = dr.async_get(hass)
+    dev_reg.async_get_or_create(
+        config_entry_id=entry.entry_id,
+        identifiers={("other_domain", "other_serial"), (DOMAIN, "")},
+    )
+    serial = _extract_serial_from_entry_or_device(entry, dev_reg)
+    assert serial is None
+
+
+@pytest.mark.asyncio
+async def test_async_setup_entry_device_name_user_customized(hass, pikvm_cert, mock_device_info):
+    """Test async_setup_entry leaves user-customized device name intact."""
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        title="PiKVM Lab",
+        unique_id="sn_12345",
+        data={
+            CONF_HOST: "https://pikvm.local",
+            CONF_USERNAME: "admin",
+            CONF_PASSWORD: "secret_password",
+            CONF_SERIAL: "sn_12345",
+            CONF_CERTIFICATE: pikvm_cert,
+            CONF_TOTP: "",
+        },
+    )
+    entry.add_to_hass(hass)
+    entry.mock_state(hass, ConfigEntryState.SETUP_IN_PROGRESS)
+
+    dev_reg = dr.async_get(hass)
+    ent_reg = er.async_get(hass)
+    dev = dev_reg.async_get_or_create(
+        config_entry_id=entry.entry_id,
+        identifiers={(DOMAIN, "sn_12345")},
+        name="PiKVM Lab",
+    )
+    ent_reg.async_get_or_create(
+        domain="sensor",
+        platform=DOMAIN,
+        unique_id=f"{entry.entry_id}_test_sensor",
+        device_id=dev.id,
+        config_entry=entry,
+    )
+    dev_reg.async_update_device(dev.id, name_by_user="My Custom PiKVM")
+
+    with patch(
+        "custom_components.pikvm.coordinator.PiKVMClient.get_info",
+        new=AsyncMock(return_value=mock_device_info),
+    ), patch.object(
+        hass.config_entries, "async_forward_entry_setups", new=AsyncMock(return_value=True)
+    ):
+        assert await async_setup_entry(hass, entry) is True
+        updated_dev = dev_reg.async_get(dev.id)
+        assert updated_dev is not None
+        assert updated_dev.name_by_user == "My Custom PiKVM"
+
+
+@pytest.mark.asyncio
+async def test_async_migrate_legacy_domain_edge_branches(hass):
+    """Test edge branches of async_migrate_legacy_domain."""
+    from custom_components.pikvm import async_migrate_legacy_domain
+
+    dev_reg = dr.async_get(hass)
+    ent_reg = er.async_get(hass)
+
+    legacy_entry = MockConfigEntry(
+        domain=LEGACY_DOMAIN,
+        entry_id="legacy_edge_id",
+        unique_id="sn_edge",
+        data={CONF_SERIAL: "sn_edge"},
+    )
+    legacy_entry.add_to_hass(hass)
+
+    target_entry = MockConfigEntry(
+        domain=DOMAIN,
+        entry_id="target_edge_id",
+        unique_id="sn_edge",
+        data={CONF_SERIAL: "sn_edge"},
+    )
+    target_entry.add_to_hass(hass)
+
+    dev = dev_reg.async_get_or_create(
+        config_entry_id=legacy_entry.entry_id,
+        identifiers={(DOMAIN, "sn_edge")},
+        name="Edge Dev",
+    )
+
+    ent_reg.async_get_or_create(
+        domain="sensor",
+        platform=LEGACY_DOMAIN,
+        unique_id="unprefixed_unique_id",
+        device_id=dev.id,
+        config_entry=legacy_entry,
+    )
+
+    orig_async_get = dev_reg.async_get
+
+    def mock_get(dev_id):
+        if dev_id == dev.id:
+            return None
+        return orig_async_get(dev_id)
+
+    with patch.object(dev_reg, "async_get", side_effect=mock_get):
+        migrated = await async_migrate_legacy_domain(hass, target_entry=target_entry)
+        assert migrated is True
+
+    holder_entry = MockConfigEntry(domain="other", entry_id="holder_edge", data={})
+    holder_entry.add_to_hass(hass)
+    orphan_dev = dev_reg.async_get_or_create(
+        config_entry_id=holder_entry.entry_id,
+        identifiers={(LEGACY_DOMAIN, "sn_orphan_243")},
+        name="Orphan Dev 243",
+    )
+    ent_orphan = ent_reg.async_get_or_create(
+        domain="sensor",
+        platform=LEGACY_DOMAIN,
+        unique_id="unprefixed_orphan_uid",
+        device_id=orphan_dev.id,
+        config_entry=holder_entry,
+    )
+    matched_entry = MockConfigEntry(
+        domain=DOMAIN,
+        entry_id="matched_243",
+        unique_id="sn_orphan_243",
+        data={CONF_SERIAL: "sn_orphan_243"},
+    )
+    matched_entry.add_to_hass(hass)
+    await async_migrate_legacy_domain(hass)
+    updated_orphan = ent_reg.async_get(ent_orphan.entity_id)
+    assert updated_orphan.unique_id == "unprefixed_orphan_uid"
+
+
+@pytest.mark.asyncio
+async def test_async_migrate_legacy_domain_inplace_remaining_branches(hass):
+    """Test remaining branches of async_migrate_legacy_domain (182, 191, 202, 206, 233)."""
+    from custom_components.pikvm import async_migrate_legacy_domain
+
+    dev_reg = dr.async_get(hass)
+    ent_reg = er.async_get(hass)
+
+    legacy_no_ser = MockConfigEntry(
+        domain=LEGACY_DOMAIN,
+        entry_id="legacy_no_ser_123",
+        unique_id="",
+        data={},
+    )
+    legacy_no_ser.add_to_hass(hass)
+
+    dev_reg.async_get_or_create(
+        config_entry_id=legacy_no_ser.entry_id,
+        identifiers={(DOMAIN, "sn_inplace_clean")},
+        name="Clean Inplace Dev",
+    )
+
+    legacy_pure_empty = MockConfigEntry(
+        domain=LEGACY_DOMAIN,
+        entry_id="legacy_pure_empty",
+        unique_id="",
+        data={},
+    )
+    legacy_pure_empty.add_to_hass(hass)
+
+    with (
+        patch.object(hass.config_entries, "async_entries", return_value=[legacy_no_ser, legacy_pure_empty]),
+        patch.object(hass.config_entries, "_entries", None),
+        patch.object(hass.config_entries, "async_setup", new=AsyncMock(return_value=True)),
+    ):
+        await async_migrate_legacy_domain(hass, target_entry=legacy_no_ser)
+
+    matched_entry = MockConfigEntry(
+        domain=DOMAIN,
+        entry_id="matched_branch_233",
+        unique_id="sn_branch_233",
+        data={CONF_SERIAL: "sn_branch_233"},
+    )
+    matched_entry.add_to_hass(hass)
+
+    holder_entry = MockConfigEntry(domain="other", entry_id="holder_branch_233", data={})
+    holder_entry.add_to_hass(hass)
+
+    orphan_dev = dev_reg.async_get_or_create(
+        config_entry_id=holder_entry.entry_id,
+        identifiers={(LEGACY_DOMAIN, "sn_branch_233")},
+        name="Orphan Dev 233",
+    )
+
+    ent_reg.async_get_or_create(
+        domain="sensor",
+        platform=DOMAIN,
+        unique_id="already_migrated_uid_233",
+        device_id=orphan_dev.id,
+        config_entry=matched_entry,
+    )
+
+    await async_migrate_legacy_domain(hass)
+
+
+@pytest.mark.asyncio
+async def test_async_remove_config_entry_device_missing_or_non_set_identifiers(hass):
+    """Test async_remove_config_entry_device safely handles None, empty, or non-set identifiers."""
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        title="PiKVM Entry",
+        unique_id="sn_12345",
+        data={CONF_SERIAL: "sn_12345"},
+    )
+    entry.add_to_hass(hass)
+
+    # 1. Device with identifiers = None
+    mock_dev_none = MagicMock(spec=dr.DeviceEntry)
+    mock_dev_none.id = "dev_none_id"
+    mock_dev_none.name = "Device None"
+    mock_dev_none.identifiers = None
+    assert await async_remove_config_entry_device(hass, entry, mock_dev_none) is True
+
+    # 2. Device with identifiers = set()
+    mock_dev_empty = MagicMock(spec=dr.DeviceEntry)
+    mock_dev_empty.id = "dev_empty_id"
+    mock_dev_empty.name = "Device Empty"
+    mock_dev_empty.identifiers = set()
+    assert await async_remove_config_entry_device(hass, entry, mock_dev_empty) is True
+
+    # 3. Device with identifiers as an int or non-collection object
+    mock_dev_int = MagicMock(spec=dr.DeviceEntry)
+    mock_dev_int.id = "dev_int_id"
+    mock_dev_int.name = "Device Int"
+    mock_dev_int.identifiers = 12345
+    assert await async_remove_config_entry_device(hass, entry, mock_dev_int) is True
+
+    # 4. Device with name=None and id=None
+    mock_dev_nameless = MagicMock(spec=dr.DeviceEntry)
+    mock_dev_nameless.id = None
+    mock_dev_nameless.name = None
+    mock_dev_nameless.identifiers = None
+    assert await async_remove_config_entry_device(hass, entry, mock_dev_nameless) is True
+
+
+@pytest.mark.asyncio
+async def test_async_remove_config_entry_device_normalized_case_and_whitespace_preserves_active_device(
+    hass,
+):
+    """Test async_remove_config_entry_device prevents removing active device across casing and whitespace."""
+    # 1. Active serial has uppercase and surrounding whitespace
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        title="PiKVM Entry",
+        unique_id="  SN_UPPER_WS_123  ",
+        data={CONF_SERIAL: "  SN_UPPER_WS_123  "},
+    )
+    entry.add_to_hass(hass)
+
+    device_normalized = MagicMock(spec=dr.DeviceEntry)
+    device_normalized.id = "dev_norm_id"
+    device_normalized.name = "Device Norm"
+    device_normalized.identifiers = {(DOMAIN, "sn_upper_ws_123")}
+
+    # Should recognize normalized match and return False
+    assert (
+        await async_remove_config_entry_device(hass, entry, device_normalized) is False
+    )
+
+    # 2. Device identifier has uppercase and whitespace, entry has lowercase
+    entry_clean = MockConfigEntry(
+        domain=DOMAIN,
+        title="PiKVM Clean",
+        unique_id="sn_clean_456",
+        data={CONF_SERIAL: "sn_clean_456"},
+    )
+    entry_clean.add_to_hass(hass)
+
+    device_raw = MagicMock(spec=dr.DeviceEntry)
+    device_raw.id = "dev_raw_id"
+    device_raw.name = "Device Raw"
+    device_raw.identifiers = {(DOMAIN, "  SN_CLEAN_456  ")}
+
+    assert await async_remove_config_entry_device(hass, entry_clean, device_raw) is False
+
+    # 3. Active serial with whitespace only, triggering raw_serial == ""
+    entry_whitespace_only = MockConfigEntry(
+        domain=DOMAIN,
+        title="PiKVM WS Only",
+        unique_id="   ",
+        data={CONF_SERIAL: "   "},
+    )
+    entry_whitespace_only.add_to_hass(hass)
+
+    stale_dev = MagicMock(spec=dr.DeviceEntry)
+    stale_dev.id = "dev_stale_id"
+    stale_dev.name = "Device Stale"
+    stale_dev.identifiers = {(DOMAIN, "some_serial")}
+
+    assert await async_remove_config_entry_device(hass, entry_whitespace_only, stale_dev) is True
+
+    # 4. Device identifiers with invalid elements (non-tuple, len != 2, empty elements)
+    device_malformed = MagicMock(spec=dr.DeviceEntry)
+    device_malformed.id = "dev_malformed_id"
+    device_malformed.name = "Device Malformed"
+    device_malformed.identifiers = [
+        "not_a_tuple",
+        ("pikvm",),
+        ("pikvm", "sn", "extra"),
+        ("", "sn"),
+        ("pikvm", ""),
+        (DOMAIN, "other_sn"),
+    ]
+    assert await async_remove_config_entry_device(hass, entry_clean, device_malformed) is True
+
+
+
 
 
 

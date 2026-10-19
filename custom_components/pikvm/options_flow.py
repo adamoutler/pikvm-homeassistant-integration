@@ -6,11 +6,8 @@ import logging
 from typing import Any
 
 import voluptuous as vol
-
 from homeassistant import config_entries
 from homeassistant.const import CONF_SCAN_INTERVAL
-
-from .const import DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -22,9 +19,10 @@ MAX_SCAN_INTERVAL = 300
 class PiKVMOptionsFlowHandler(config_entries.OptionsFlow):
     """Handle PiKVM options."""
 
-    def __init__(self, config_entry: config_entries.ConfigEntry) -> None:
-        """Initialize options flow."""
-        self.config_entry = config_entry
+    def __init__(self, config_entry: config_entries.ConfigEntry | None = None) -> None:
+        """Initialize PiKVM options flow."""
+        if config_entry is not None:
+            self._config_entry = config_entry
 
     async def async_step_init(
         self, user_input: dict[str, Any] | None = None

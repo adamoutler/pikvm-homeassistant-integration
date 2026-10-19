@@ -165,6 +165,9 @@
     "cannot_fetch_cert": {
       "message": "Unable to retrieve SSL/TLS certificate from PiKVM at {host}."
     },
+    "ssl_certificate_error": {
+      "message": "SSL certificate validation failed for PiKVM at {host}."
+    },
     "communication_error": {
       "message": "Error communicating with PiKVM at {host}: {error}"
     }

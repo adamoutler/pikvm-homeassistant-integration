@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+import logging
+import math
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
-import logging
 from typing import Any
 
 from homeassistant.components.sensor import (
@@ -13,7 +14,6 @@ from homeassistant.components.sensor import (
     SensorEntityDescription,
     SensorStateClass,
 )
-from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import (
     PERCENTAGE,
     REVOLUTIONS_PER_MINUTE,
@@ -25,6 +25,7 @@ from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.typing import StateType
 
+from . import PiKVMConfigEntry
 from .const import DOMAIN
 from .coordinator import PiKVMDataUpdateCoordinator
 from .entity import PiKVMEntity
@@ -47,24 +48,33 @@ class PiKVMSensorEntityDescription(SensorEntityDescription):
 def _get_cpu_temp(data: Any) -> float | None:
     val = get_nested_value(data, ["hw", "health", "temp", "cpu"])
     try:
-        return float(val) if val is not None else None
-    except (ValueError, TypeError):
+        if val is None:
+            return None
+        num = float(val)
+        return num if math.isfinite(num) else None
+    except (ValueError, TypeError, OverflowError):
         return None
 
 
 def _get_cpu_utilization(data: Any) -> float | None:
     val = get_nested_value(data, ["hw", "performance", "cpu", "utilization"])
     try:
-        return float(val) if val is not None else None
-    except (ValueError, TypeError):
+        if val is None:
+            return None
+        num = float(val)
+        return num if math.isfinite(num) else None
+    except (ValueError, TypeError, OverflowError):
         return None
 
 
 def _get_memory_utilization(data: Any) -> float | None:
     val = get_nested_value(data, ["hw", "performance", "memory", "utilization"])
     try:
-        return float(val) if val is not None else None
-    except (ValueError, TypeError):
+        if val is None:
+            return None
+        num = float(val)
+        return num if math.isfinite(num) else None
+    except (ValueError, TypeError, OverflowError):
         return None
 
 
@@ -81,51 +91,99 @@ def _get_memory_attributes(data: Any) -> dict[str, Any]:
 
 def _get_fan_speed(data: Any) -> int | None:
     val = get_nested_value(data, ["hw", "performance", "fan", "speed"])
+    if val is None:
+        val = get_nested_value(data, ["hw", "fan", "speed"])
+    if val is None:
+        return None
     try:
-        return int(val) if val is not None else None
-    except (ValueError, TypeError):
+        num_int = int(val)
+        num_float = float(num_int)
+        if not math.isfinite(num_float) or not (0 <= num_float <= 100_000):
+            return None
+        return num_int
+    except (ValueError, TypeError, OverflowError):
         return None
 
 
 def _get_fan_attributes(data: Any) -> dict[str, Any]:
-    return get_nested_value(data, ["hw", "performance", "fan"], {}) or {}
+    fan_data = get_nested_value(data, ["hw", "performance", "fan"])
+    if not isinstance(fan_data, Mapping):
+        fan_data = get_nested_value(data, ["hw", "fan"])
+    if isinstance(fan_data, Mapping):
+        return dict(fan_data)
+    return {}
 
 
 def _get_msd_storage(data: Any) -> float | None:
-    storage = get_nested_value(data, ["msd", "storage"], {})
-    total = storage.get("total")
-    available = storage.get("available")
-    if total is None or available is None or total <= 0:
+    storage = get_nested_value(data, ["msd", "storage"])
+    if not isinstance(storage, Mapping):
         return None
-    used = total - available
-    return round((used / total) * 100, 2)
+    total_raw = storage.get("total")
+    avail_raw = (
+        storage.get("available")
+        if storage.get("available") is not None
+        else storage.get("free")
+    )
+    if total_raw is None or avail_raw is None:
+        return None
+    try:
+        total = float(total_raw)
+        available = float(avail_raw)
+        if not math.isfinite(total) or not math.isfinite(available) or total <= 0:
+            return None
+        used = max(0.0, total - available)
+        return round(float((used / total) * 100), 2)
+    except (ValueError, TypeError, OverflowError, ZeroDivisionError):
+        return None
 
 
 def _get_msd_storage_attributes(data: Any) -> dict[str, Any]:
     attrs: dict[str, Any] = {}
-    storage_data = get_nested_value(data, ["msd", "storage"], {})
-    total = storage_data.get("total")
-    available = storage_data.get("available")
+    storage_data = get_nested_value(data, ["msd", "storage"])
+    if not isinstance(storage_data, Mapping):
+        return attrs
 
-    if total is not None:
-        attrs["total_size_mb"] = round(bytes_to_mb(total), 2)
-    if available is not None:
-        attrs["free_size_mb"] = round(bytes_to_mb(available), 2)
-    if total is not None and available is not None:
-        used = total - available
-        attrs["used_size_mb"] = round(bytes_to_mb(used), 2)
+    total_raw = storage_data.get("total")
+    avail_raw = (
+        storage_data.get("available")
+        if storage_data.get("available") is not None
+        else storage_data.get("free")
+    )
+
+    if total_raw is not None:
+        total_mb = bytes_to_mb(total_raw)
+        if total_mb is not None:
+            attrs["total_size_mb"] = round(total_mb, 2)
+
+    if avail_raw is not None:
+        free_mb = bytes_to_mb(avail_raw)
+        if free_mb is not None:
+            attrs["free_size_mb"] = round(free_mb, 2)
+
+    if total_raw is not None and avail_raw is not None:
+        try:
+            total_num = float(total_raw)
+            avail_num = float(avail_raw)
+            if math.isfinite(total_num) and math.isfinite(avail_num):
+                used = max(0.0, total_num - avail_num)
+                used_mb = bytes_to_mb(used)
+                if used_mb is not None:
+                    attrs["used_size_mb"] = round(used_mb, 2)
+        except (ValueError, TypeError, OverflowError, ZeroDivisionError):
+            pass
 
     val = _get_msd_storage(data)
     if val is not None:
         attrs["percent_used"] = val
 
     images = storage_data.get("images", {}) or {}
-    if images:
+    if isinstance(images, Mapping) and images:
         if len(images) < 20:
             for image, details in images.items():
-                size = details.get("size")
-                if size is not None:
-                    attrs[image] = size
+                if isinstance(details, Mapping):
+                    size = details.get("size")
+                    if size is not None:
+                        attrs[str(image)] = size
         else:
             attrs["file count"] = len(images)
     return attrs
@@ -139,7 +197,6 @@ CPU_TEMP_SENSOR_DESCRIPTION = PiKVMSensorEntityDescription(
     native_unit_of_measurement=UnitOfTemperature.CELSIUS,
     suggested_display_precision=1,
     entity_category=EntityCategory.DIAGNOSTIC,
-    icon="mdi:thermometer",
     value_fn=_get_cpu_temp,
     available_fn=lambda data: _get_cpu_temp(data) is not None,
 )
@@ -151,9 +208,8 @@ CPU_UTILIZATION_SENSOR_DESCRIPTION = PiKVMSensorEntityDescription(
     native_unit_of_measurement=PERCENTAGE,
     suggested_display_precision=1,
     entity_category=EntityCategory.DIAGNOSTIC,
-    icon="mdi:cpu-64-bit",
     value_fn=_get_cpu_utilization,
-    available_fn=lambda data: "performance" in get_nested_value(data, ["hw"], {}),
+    available_fn=lambda data: _get_cpu_utilization(data) is not None,
 )
 
 MEMORY_UTILIZATION_SENSOR_DESCRIPTION = PiKVMSensorEntityDescription(
@@ -163,10 +219,9 @@ MEMORY_UTILIZATION_SENSOR_DESCRIPTION = PiKVMSensorEntityDescription(
     native_unit_of_measurement=PERCENTAGE,
     suggested_display_precision=1,
     entity_category=EntityCategory.DIAGNOSTIC,
-    icon="mdi:memory",
     value_fn=_get_memory_utilization,
     attributes_fn=_get_memory_attributes,
-    available_fn=lambda data: "performance" in get_nested_value(data, ["hw"], {}),
+    available_fn=lambda data: _get_memory_utilization(data) is not None,
 )
 
 FAN_SPEED_SENSOR_DESCRIPTION = PiKVMSensorEntityDescription(
@@ -175,10 +230,9 @@ FAN_SPEED_SENSOR_DESCRIPTION = PiKVMSensorEntityDescription(
     state_class=SensorStateClass.MEASUREMENT,
     native_unit_of_measurement=REVOLUTIONS_PER_MINUTE,
     entity_category=EntityCategory.DIAGNOSTIC,
-    icon="mdi:fan",
     value_fn=_get_fan_speed,
     attributes_fn=_get_fan_attributes,
-    available_fn=lambda data: "fan" in get_nested_value(data, ["hw", "performance"], {}),
+    available_fn=lambda data: _get_fan_speed(data) is not None,
 )
 
 MSD_STORAGE_SENSOR_DESCRIPTION = PiKVMSensorEntityDescription(
@@ -188,10 +242,9 @@ MSD_STORAGE_SENSOR_DESCRIPTION = PiKVMSensorEntityDescription(
     native_unit_of_measurement=PERCENTAGE,
     suggested_display_precision=2,
     entity_category=EntityCategory.DIAGNOSTIC,
-    icon="mdi:database",
     value_fn=_get_msd_storage,
     attributes_fn=_get_msd_storage_attributes,
-    available_fn=lambda data: get_nested_value(data, ["msd", "storage"]) is not None,
+    available_fn=lambda data: _get_msd_storage(data) is not None,
 )
 
 SENSOR_DESCRIPTIONS: tuple[PiKVMSensorEntityDescription, ...] = (
@@ -245,68 +298,16 @@ class PiKVMSensor(PiKVMEntity, SensorEntity):
         return attrs
 
 
-class PiKVMBaseSensor(PiKVMSensor):
-    """Base class for a PiKVM sensor (backward-compatible subclass)."""
-
-    def __init__(
-        self,
-        coordinator: PiKVMDataUpdateCoordinator,
-        unique_id_base: str,
-        sensor_type: str,
-        name: str | None = None,
-        unit: str | None = None,
-        icon: str | None = None,
-        description: PiKVMSensorEntityDescription | None = None,
-    ) -> None:
-        """Initialize base sensor with fallback description."""
-        if description is None:
-            description = PiKVMSensorEntityDescription(
-                key=sensor_type,
-                name=name or sensor_type.replace("_", " ").title(),
-                translation_key=sensor_type,
-                native_unit_of_measurement=unit,
-                icon=icon,
-                value_fn=lambda _: None,
-            )
-        super().__init__(coordinator, unique_id_base, description)
-        self._attr_unique_id = f"{unique_id_base}_{sensor_type}"
-        self._attr_name = name
-        self._attr_unit_of_measurement = unit
-        self._attr_icon = icon
-        self._sensor_type = sensor_type
-        self._unique_id_base = unique_id_base
-
-    @property
-    def unit_of_measurement(self) -> str | None:
-        """Return the preferred units of measure."""
-        if getattr(self, "_attr_unit_of_measurement", None) is not None:
-            return self._attr_unit_of_measurement
-        if getattr(self, "_attr_native_unit_of_measurement", None) is not None:
-            return self._attr_native_unit_of_measurement
-        if getattr(self, "entity_description", None) is not None:
-            return getattr(self.entity_description, "native_unit_of_measurement", None)
-        return None
-
-    @property
-    def state(self) -> str | int | float | bool | None:
-        """Return the state of the sensor."""
-        if type(self) is PiKVMBaseSensor:
-            raise NotImplementedError(
-                "The state method must be implemented by the subclass."
-            )
-        return self.native_value
-
-
 async def async_setup_entry(
     hass: HomeAssistant,
-    config_entry: ConfigEntry,
+    config_entry: PiKVMConfigEntry,
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     """Set up PiKVM sensors from a config entry."""
     _LOGGER.debug("Setting up PiKVM sensors from config entry")
     coordinator: PiKVMDataUpdateCoordinator = (
         getattr(config_entry, "runtime_data", None)
-        or hass.data[DOMAIN][config_entry.entry_id]
+        or (hass.data.get(DOMAIN, {}) or {})[config_entry.entry_id]
     )
     unique_id_base = get_unique_id_base(config_entry, coordinator)
 
@@ -317,40 +318,17 @@ async def async_setup_entry(
 
     ent_reg = er.async_get(hass)
     valid_uids = {s.unique_id for s in sensors}
-    for ent_entry in er.async_entries_for_config_entry(ent_reg, config_entry.entry_id):
-        if ent_entry.domain == "sensor" and ent_entry.unique_id not in valid_uids:
-            _LOGGER.info(
-                "Removing stale legacy sensor entity %s (unique_id: %s)",
-                ent_entry.entity_id,
-                ent_entry.unique_id,
-            )
-            ent_reg.async_remove(ent_entry.entity_id)
+    if not unique_id_base.endswith("_unknown"):
+        for ent_entry in er.async_entries_for_config_entry(
+            ent_reg, config_entry.entry_id
+        ):
+            if ent_entry.domain == "sensor" and ent_entry.unique_id not in valid_uids:
+                _LOGGER.info(
+                    "Removing stale legacy sensor entity %s (unique_id: %s)",
+                    ent_entry.entity_id,
+                    ent_entry.unique_id,
+                )
+                ent_reg.async_remove(ent_entry.entity_id)
 
     async_add_entities(sensors, True)
     _LOGGER.debug("PiKVM sensors added to Home Assistant")
-
-
-# pylint: disable=import-outside-toplevel
-def lazy_import_sensors():
-    """Lazy load the sensor classes."""
-    from .sensors.pikvm_cpu_temp_sensor import PiKVMCpuTempSensor
-    from .sensors.pikvm_cpu_utilization_sensor import PiKVMCpuUtilizationSensor
-    from .sensors.pikvm_extra_sensor import PiKVMExtraSensor
-    from .sensors.pikvm_fan_speed_sensor import PiKVMFanSpeedSensor
-    from .sensors.pikvm_memory_utilization_sensor import PiKVMMemoryUtilizationSensor
-    from .sensors.pikvm_msd_drive_sensor import PiKVMSDDriveSensor
-    from .sensors.pikvm_msd_enabled_sensor import PiKVMSDEnabledSensor
-    from .sensors.pikvm_msd_storage_sensor import PiKVMSDStorageSensor
-    from .sensors.pikvm_throttling_sensor import PiKVMThrottlingSensor
-
-    return {
-        "cpu_temp": PiKVMCpuTempSensor,
-        "cpu_utilization": PiKVMCpuUtilizationSensor,
-        "extra": PiKVMExtraSensor,
-        "fan_speed": PiKVMFanSpeedSensor,
-        "memory_utilization": PiKVMMemoryUtilizationSensor,
-        "msd_drive": PiKVMSDDriveSensor,
-        "msd_enabled": PiKVMSDEnabledSensor,
-        "msd_storage": PiKVMSDStorageSensor,
-        "throttling": PiKVMThrottlingSensor,
-    }

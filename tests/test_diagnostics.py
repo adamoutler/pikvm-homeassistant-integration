@@ -1,6 +1,7 @@
 """Tests for the PiKVM diagnostics platform."""
 
 from unittest.mock import MagicMock
+
 import pytest
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
@@ -115,6 +116,31 @@ async def test_diagnostics_with_dict_data_and_none_data(hass):
     mock_coordinator.data = None
     diagnostics_none = await async_get_config_entry_diagnostics(hass, entry)
     assert diagnostics_none["coordinator"]["data"] is None
+
+
+@pytest.mark.asyncio
+async def test_diagnostics_with_non_dict_non_raw_data(hass):
+    """Test diagnostics when coordinator.data is a non-dict scalar without a raw attribute."""
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        unique_id="pikvm_scalar",
+        data={
+            CONF_HOST: "https://pikvm.local",
+            CONF_USERNAME: "admin",
+            CONF_PASSWORD: "secret_password",
+        },
+    )
+    entry.add_to_hass(hass)
+
+    mock_coordinator = MagicMock()
+    mock_coordinator.last_update_success = True
+    mock_coordinator.update_interval = "0:00:30"
+    mock_coordinator.data = "unexpected_scalar"
+
+    hass.data.setdefault(DOMAIN, {})[entry.entry_id] = mock_coordinator
+
+    diagnostics = await async_get_config_entry_diagnostics(hass, entry)
+    assert diagnostics["coordinator"]["data"] is None
 
 
 @pytest.mark.asyncio

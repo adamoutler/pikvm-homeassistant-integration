@@ -5,7 +5,7 @@ import pytest
 try:
     import pycares
     _channel = pycares.Channel()
-except Exception:
+except Exception:  # noqa: BLE001, S110
     pass
 
 pytest_plugins = "pytest_homeassistant_custom_component"

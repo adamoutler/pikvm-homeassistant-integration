@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from unittest.mock import AsyncMock, patch
+
 import pytest
 from homeassistant.config_entries import SOURCE_RECONFIGURE
 from homeassistant.const import CONF_PORT
@@ -296,3 +297,55 @@ async def test_reconfigure_flow_unique_id_mismatch(hass, mock_entry):
 
         assert result2["type"] is FlowResultType.ABORT
         assert result2["reason"] in ("unique_id_mismatched", "cannot_connect")
+
+
+@pytest.mark.asyncio
+async def test_reconfigure_flow_port_already_in_host(hass, mock_entry):
+    """Test reconfigure flow when port is already included in host (line 414 branch)."""
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN,
+        context={"source": SOURCE_RECONFIGURE, "entry_id": mock_entry.entry_id},
+    )
+
+    with patch(
+        "custom_components.pikvm.config_flow.fetch_serialized_cert",
+        new=AsyncMock(return_value="valid_cert"),
+    ), patch(
+        "custom_components.pikvm.config_flow.is_pikvm_device",
+        new=AsyncMock(
+            return_value=PiKVMResponse(
+                success=True,
+                model="v3",
+                serial=mock_entry.data[CONF_SERIAL],
+                name="PiKVM",
+                error=None,
+            )
+        ),
+    ):
+        result2 = await hass.config_entries.flow.async_configure(
+            result["flow_id"],
+            user_input={
+                CONF_HOST: "https://192.168.1.100:443",
+                CONF_PORT: 443,
+                CONF_USERNAME: "admin",
+                CONF_PASSWORD: "new_password",
+                CONF_TOTP: "",
+            },
+        )
+        assert result2["type"] is FlowResultType.ABORT
+        assert result2["reason"] == "reconfigure_successful"
+
+
+@pytest.mark.asyncio
+async def test_reconfigure_confirm_no_reconfigure_entry(hass):
+    """Test async_step_reconfigure_confirm when _get_reconfigure_entry is None (line 463 branch)."""
+    from custom_components.pikvm.config_flow import PiKVMConfigFlow
+
+    flow = PiKVMConfigFlow()
+    flow.hass = hass
+
+    with patch.object(flow, "_get_reconfigure_entry", return_value=None):
+        result = await flow.async_step_reconfigure_confirm()
+        assert result["type"] is FlowResultType.FORM
+        assert result["step_id"] == "reconfigure_confirm"
+

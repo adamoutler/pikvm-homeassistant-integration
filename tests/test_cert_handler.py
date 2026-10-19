@@ -1,8 +1,8 @@
 """Tests for PiKVM certificate and device verification helpers."""
 
 from unittest.mock import AsyncMock, MagicMock, patch
-import pytest
 
+import pytest
 from pikvm_aio import (
     PiKVMAuthenticationError,
     PiKVMConnectionError,
@@ -168,7 +168,7 @@ def test_cert_handler_no_verify_ssl_context_exception():
         "homeassistant.util.ssl.get_default_no_verify_context",
         side_effect=RuntimeError("SSL context error"),
     ):
-        import custom_components.pikvm.cert_handler as cert_handler
+        from custom_components.pikvm import cert_handler
 
         importlib.reload(cert_handler)
         assert cert_handler._DEFAULT_NO_VERIFY_SSL_CONTEXT is None

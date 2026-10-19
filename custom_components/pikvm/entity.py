@@ -15,6 +15,7 @@ class PiKVMEntity(CoordinatorEntity[PiKVMDataUpdateCoordinator]):
     """Base class for a PiKVM entity."""
 
     _attr_has_entity_name = True
+    _attr_unique_id_base: str
 
     def __init__(
         self, coordinator: PiKVMDataUpdateCoordinator, unique_id_base: str
@@ -24,3 +25,9 @@ class PiKVMEntity(CoordinatorEntity[PiKVMDataUpdateCoordinator]):
         self.coordinator = coordinator
         self._attr_device_info = coordinator.device_info
         self._attr_unique_id_base = unique_id_base
+
+    @property
+    def available(self) -> bool:
+        """Return True if entity is available."""
+        return super().available and self.coordinator.data is not None
+

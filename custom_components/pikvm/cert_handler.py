@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from collections import namedtuple
 import logging
-from typing import Any
+import ssl
+from typing import NamedTuple
 
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
@@ -15,12 +15,11 @@ from pikvm_aio import (
     PiKVMDeviceError,
     PiKVMTimeoutError,
     fetch_remote_cert,
-    format_url,
-    parse_host_port,
 )
 
 _LOGGER = logging.getLogger(__name__)
 
+_DEFAULT_NO_VERIFY_SSL_CONTEXT: ssl.SSLContext | None
 try:
     from homeassistant.util.ssl import get_default_no_verify_context
 
@@ -31,16 +30,22 @@ except Exception:  # noqa: BLE001
 # Backwards compatibility alias
 async_fetch_peer_certificate = fetch_remote_cert
 
-PiKVMResponse = namedtuple(
-    "PiKVMResponse", ["success", "model", "serial", "name", "error"]
-)
+
+class PiKVMResponse(NamedTuple):
+    """Response returned by is_pikvm_device verification helper."""
+
+    success: bool
+    model: str | None
+    serial: str | None
+    name: str | None
+    error: str | None
 
 
 async def fetch_serialized_cert(hass: HomeAssistant | None, url: str) -> str | None:
     """Fetch and serialize certificate using pikvm-aio."""
     try:
         return await fetch_remote_cert(url, timeout=5.0)
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         _LOGGER.debug("Could not fetch certificate from %s: %s", url, e)
         return None
 
@@ -73,5 +78,5 @@ async def is_pikvm_device(
         return PiKVMResponse(False, None, None, None, "timeout")
     except (PiKVMConnectionError, PiKVMDeviceError):
         return PiKVMResponse(False, None, None, None, "cannot_connect")
-    except Exception:
+    except Exception:  # noqa: BLE001
         return PiKVMResponse(False, None, None, None, "cannot_connect")

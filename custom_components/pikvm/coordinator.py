@@ -2,10 +2,9 @@
 
 from __future__ import annotations
 
-import asyncio
-from datetime import timedelta
 import logging
 import ssl
+from datetime import timedelta
 from typing import Any
 
 import aiohttp
@@ -41,6 +40,7 @@ _LOGGER = logging.getLogger(__name__)
 
 DEFAULT_SCAN_INTERVAL = 30
 
+_DEFAULT_NO_VERIFY_SSL_CONTEXT: ssl.SSLContext | None = None
 try:
     from homeassistant.util.ssl import get_default_no_verify_context
 
@@ -76,7 +76,7 @@ class PiKVMDataUpdateCoordinator(DataUpdateCoordinator[PiKVMDeviceInfo]):
 
         try:
             self.clean_host = parse_host_port(self.url)[0]
-        except Exception:
+        except Exception:  # noqa: BLE001
             self.clean_host = self.url.replace("https://", "").replace("http://", "").split("/")[0]
 
         scan_interval = DEFAULT_SCAN_INTERVAL
@@ -129,7 +129,7 @@ class PiKVMDataUpdateCoordinator(DataUpdateCoordinator[PiKVMDeviceInfo]):
             raw_name = str(self.device_info["name"])
 
         if not raw_name and self.data and getattr(self.data, "name", None):
-            data_name = getattr(self.data, "name")
+            data_name = self.data.name
             if data_name and data_name not in ("localhost", "localhost.localdomain"):
                 raw_name = str(data_name)
 
@@ -229,17 +229,42 @@ class PiKVMDataUpdateCoordinator(DataUpdateCoordinator[PiKVMDeviceInfo]):
             self._async_check_hardware_health(data)
             return data
         except PiKVMAuthenticationError as auth_err:
-            _LOGGER.error("Authentication failed for PiKVM at %s: %s", self.url, auth_err)
-            raise ConfigEntryAuthFailed("Invalid credentials or 2FA TOTP token required") from auth_err
-        except (PiKVMTimeoutError, asyncio.TimeoutError) as err:
+            _LOGGER.debug("Authentication failed for PiKVM at %s: %s", self.url, auth_err)
+            raise ConfigEntryAuthFailed(
+                "Invalid credentials or 2FA TOTP token required",
+                translation_domain=DOMAIN,
+                translation_key="authentication_error",
+                translation_placeholders={"host": self.clean_host},
+            ) from auth_err
+        except (TimeoutError, PiKVMTimeoutError) as err:
             _LOGGER.debug("Timeout connecting to PiKVM at %s: %s", self.url, err)
-            raise UpdateFailed(f"Connection timed out reaching {self.clean_host}") from err
+            raise UpdateFailed(
+                f"Connection timed out reaching {self.clean_host}",
+                translation_domain=DOMAIN,
+                translation_key="timeout",
+                translation_placeholders={"host": self.clean_host},
+            ) from err
         except ssl.SSLError as err:
             _LOGGER.debug("SSL error connecting to PiKVM at %s: %s", self.url, err)
-            raise UpdateFailed(f"SSL certificate validation failed for {self.clean_host}") from err
+            raise UpdateFailed(
+                f"SSL certificate validation failed for {self.clean_host}",
+                translation_domain=DOMAIN,
+                translation_key="ssl_certificate_error",
+                translation_placeholders={"host": self.clean_host},
+            ) from err
         except (PiKVMConnectionError, aiohttp.ClientError, OSError) as err:
             _LOGGER.debug("Connection error to PiKVM at %s: %s", self.url, err)
-            raise UpdateFailed(f"Cannot connect to {self.clean_host} (host offline or connection refused)") from err
+            raise UpdateFailed(
+                f"Cannot connect to {self.clean_host} (host offline or connection refused)",
+                translation_domain=DOMAIN,
+                translation_key="cannot_connect",
+                translation_placeholders={"host": self.clean_host},
+            ) from err
         except (PiKVMDeviceError, PiKVMError) as err:
             _LOGGER.debug("Error communicating with PiKVM API at %s: %s", self.url, err)
-            raise UpdateFailed(f"Error communicating with PiKVM at {self.clean_host}: {err}") from err
+            raise UpdateFailed(
+                f"Error communicating with PiKVM at {self.clean_host}: {err}",
+                translation_domain=DOMAIN,
+                translation_key="communication_error",
+                translation_placeholders={"host": self.clean_host, "error": str(err)},
+            ) from err
