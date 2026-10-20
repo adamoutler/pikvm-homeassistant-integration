@@ -33,7 +33,7 @@ from .const import (
     MANUFACTURER,
 )
 from .coordinator import PiKVMDataUpdateCoordinator
-from .utils import get_nested_value
+from .utils import get_nested_value, normalize_serial
 
 PLATFORMS: list[Platform] = [Platform.SENSOR, Platform.BINARY_SENSOR]
 
@@ -49,13 +49,17 @@ def _extract_serial_from_entry_or_device(
 ) -> str | None:
     """Extract normalized serial from a ConfigEntry or its associated devices."""
     if entry is not None:
-        serial = entry.data.get(CONF_SERIAL) or entry.unique_id
-        if isinstance(serial, str) and serial.strip():
-            return serial.strip().lower()
+        serial = normalize_serial(entry.data.get(CONF_SERIAL)) or normalize_serial(
+            entry.unique_id
+        )
+        if serial:
+            return serial
         for dev in dr.async_entries_for_config_entry(dev_reg, entry.entry_id):
             for domain, ident in dev.identifiers:
-                if domain in (DOMAIN, LEGACY_DOMAIN) and ident:
-                    return ident.strip().lower()
+                if domain in (DOMAIN, LEGACY_DOMAIN) and (
+                    norm_ident := normalize_serial(ident)
+                ):
+                    return norm_ident
     return None
 
 
@@ -111,13 +115,50 @@ def _cleanup_legacy_issues(hass: HomeAssistant, entry_id: str | None = None) -> 
         )
         ir.async_delete_issue(hass, LEGACY_DOMAIN, f"undervoltage_{entry_id}")
         ir.async_delete_issue(hass, LEGACY_DOMAIN, f"throttling_{entry_id}")
+        ir.async_delete_issue(hass, DOMAIN, f"undervoltage_{entry_id}")
+        ir.async_delete_issue(hass, DOMAIN, f"throttling_{entry_id}")
+
+
+async def _deduplicate_entry_into_primary(
+    hass: HomeAssistant,
+    dev_reg: dr.DeviceRegistry,
+    ent_reg: er.EntityRegistry,
+    primary_entry: ConfigEntry,
+    dup_entry: ConfigEntry,
+) -> None:
+    """Merge devices and entities from dup_entry into primary_entry and remove dup_entry."""
+    new_id = primary_entry.entry_id
+    old_id = dup_entry.entry_id
+
+    for dev in dr.async_entries_for_config_entry(dev_reg, old_id):
+        new_identifiers = {
+            (DOMAIN if dom == LEGACY_DOMAIN else dom, ident)
+            for dom, ident in dev.identifiers
+        }
+        dev_reg.async_update_device(
+            dev.id,
+            add_config_entry_id=new_id,
+            new_identifiers=new_identifiers,
+        )
+
+    for entity_entry in er.async_entries_for_config_entry(ent_reg, old_id):
+        new_uid = entity_entry.unique_id
+        if new_uid.startswith(f"{old_id}_"):
+            new_uid = f"{new_id}_{new_uid[len(old_id) + 1:]}"
+        _migrate_entity_to_pikvm(hass, ent_reg, entity_entry, new_id, new_uid)
+
+    for dev in dr.async_entries_for_config_entry(dev_reg, old_id):
+        dev_reg.async_update_device(dev.id, remove_config_entry_id=old_id)
+
+    _cleanup_legacy_issues(hass, old_id)
+    await hass.config_entries.async_remove(old_id)
 
 
 async def async_migrate_legacy_domain(
     hass: HomeAssistant,
     target_entry: ConfigEntry | None = None,
 ) -> bool:
-    """Seamlessly migrate legacy `pikvm_ha` config entries, devices, and entities to `pikvm`."""
+    """Seamlessly migrate legacy `pikvm_ha` config entries and deduplicate `pikvm` entries by serial."""
     dev_reg = dr.async_get(hass)
     ent_reg = er.async_get(hass)
     migrated_any = False
@@ -134,7 +175,20 @@ async def async_migrate_legacy_domain(
     pikvm_by_serial: dict[str, ConfigEntry] = {}
     for entry in current_entries:
         serial = _extract_serial_from_entry_or_device(entry, dev_reg)
-        if serial:
+        if not serial:
+            continue
+        existing_primary = pikvm_by_serial.get(serial)
+        if existing_primary is not None and existing_primary.entry_id != entry.entry_id:
+            if target_entry is not None and entry.entry_id == target_entry.entry_id:
+                primary_entry, dup_entry = entry, existing_primary
+                pikvm_by_serial[serial] = primary_entry
+            else:
+                primary_entry, dup_entry = existing_primary, entry
+            await _deduplicate_entry_into_primary(
+                hass, dev_reg, ent_reg, primary_entry, dup_entry
+            )
+            migrated_any = True
+        else:
             pikvm_by_serial[serial] = entry
 
     for legacy_entry in legacy_entries:
@@ -145,31 +199,9 @@ async def async_migrate_legacy_domain(
             matching_new_entry is not None
             and matching_new_entry.entry_id != legacy_entry.entry_id
         ):
-            new_id = matching_new_entry.entry_id
-            old_id = legacy_entry.entry_id
-
-            for dev in dr.async_entries_for_config_entry(dev_reg, old_id):
-                new_identifiers = {
-                    (DOMAIN if dom == LEGACY_DOMAIN else dom, ident)
-                    for dom, ident in dev.identifiers
-                }
-                dev_reg.async_update_device(
-                    dev.id,
-                    add_config_entry_id=new_id,
-                    new_identifiers=new_identifiers,
-                )
-
-            for entity_entry in er.async_entries_for_config_entry(ent_reg, old_id):
-                new_uid = entity_entry.unique_id
-                if new_uid.startswith(f"{old_id}_"):
-                    new_uid = f"{new_id}_{new_uid[len(old_id) + 1:]}"
-                _migrate_entity_to_pikvm(hass, ent_reg, entity_entry, new_id, new_uid)
-
-            for dev in dr.async_entries_for_config_entry(dev_reg, old_id):
-                dev_reg.async_update_device(dev.id, remove_config_entry_id=old_id)
-
-            _cleanup_legacy_issues(hass, old_id)
-            await hass.config_entries.async_remove(old_id)
+            await _deduplicate_entry_into_primary(
+                hass, dev_reg, ent_reg, matching_new_entry, legacy_entry
+            )
             migrated_any = True
         else:
             entry_id = legacy_entry.entry_id
@@ -339,6 +371,20 @@ async def async_setup_entry(hass: HomeAssistant, entry: PiKVMConfigEntry) -> boo
     hw_info = getattr(coordinator.data, "hw", None)
     platform_info = getattr(hw_info, "platform", None)
 
+    live_serial = normalize_serial(
+        getattr(platform_info, "serial", None)
+        or platform.get("serial")
+        or getattr(coordinator.data, "serial", None)
+    )
+    if live_serial and effective_serial == "unknown":
+        effective_serial = live_serial
+        hass.config_entries.async_update_entry(
+            entry,
+            unique_id=effective_serial,
+            data={**entry.data, CONF_SERIAL: effective_serial},
+        )
+        await async_migrate_legacy_domain(hass, target_entry=entry)
+
     model = (
         getattr(platform_info, "model", None)
         or getattr(platform_info, "type", None)
@@ -353,9 +399,16 @@ async def async_setup_entry(hass: HomeAssistant, entry: PiKVMConfigEntry) -> boo
     discovered_name = getattr(coordinator.data, "name", None)
     host_suffix = f" ({clean_host})"
     has_legacy_host = bool(
-        clean_host
-        and entry.title
-        and (entry.title.endswith(host_suffix) or entry.title.startswith("PiKVM ("))
+        entry.title
+        and (
+            (clean_host and entry.title.endswith(host_suffix))
+            or entry.title.startswith("PiKVM (")
+            or (
+                discovered_name
+                and entry.title.startswith(f"{discovered_name} (")
+                and entry.title.endswith(")")
+            )
+        )
     )
 
     if entry.title and not (

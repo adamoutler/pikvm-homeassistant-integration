@@ -1243,6 +1243,97 @@ async def test_async_remove_config_entry_device_normalized_case_and_whitespace_p
     assert await async_remove_config_entry_device(hass, entry_clean, device_malformed) is True
 
 
+@pytest.mark.asyncio
+async def test_async_migrate_legacy_domain_deduplicates_same_domain_entries(hass):
+    """Test async_migrate_legacy_domain deduplicates two DOMAIN (pikvm) entries with the same serial."""
+    from custom_components.pikvm import async_migrate_legacy_domain
+
+    dev_reg = dr.async_get(hass)
+    ent_reg = er.async_get(hass)
+
+    # Case 1: target_entry is the second entry (lines 182-184)
+    eth_entry = MockConfigEntry(
+        domain=DOMAIN,
+        entry_id="eth_entry_id",
+        unique_id="1000000067b50781",
+        data={CONF_HOST: "https://192.168.1.34", CONF_SERIAL: "1000000067b50781"},
+    )
+    eth_entry.add_to_hass(hass)
+    wifi_entry = MockConfigEntry(
+        domain=DOMAIN,
+        entry_id="wifi_entry_id",
+        unique_id="1000000067b50781",
+        data={CONF_HOST: "https://192.168.1.105", CONF_SERIAL: "1000000067b50781"},
+    )
+    wifi_entry.add_to_hass(hass)
+
+    eth_dev = dev_reg.async_get_or_create(
+        config_entry_id=eth_entry.entry_id,
+        identifiers={(DOMAIN, "1000000067b50781")},
+        name="pikvm-office",
+    )
+    ent_reg.async_get_or_create(
+        domain="sensor",
+        platform=DOMAIN,
+        unique_id=f"{eth_entry.entry_id}_1000000067b50781_cpu_temp",
+        device_id=eth_dev.id,
+        config_entry=eth_entry,
+    )
+
+    migrated = await async_migrate_legacy_domain(hass, target_entry=wifi_entry)
+    assert migrated is True
+    assert hass.config_entries.async_get_entry(eth_entry.entry_id) is None
+    assert hass.config_entries.async_get_entry(wifi_entry.entry_id) is not None
+
+    # Case 2: target_entry is None (or first entry), so second entry is removed (line 186)
+    dup_entry = MockConfigEntry(
+        domain=DOMAIN,
+        entry_id="dup_entry_id",
+        unique_id="1000000067b50781",
+        data={CONF_HOST: "https://192.168.1.34", CONF_SERIAL: "1000000067b50781"},
+    )
+    dup_entry.add_to_hass(hass)
+
+    migrated2 = await async_migrate_legacy_domain(hass, target_entry=None)
+    assert migrated2 is True
+    assert hass.config_entries.async_get_entry(dup_entry.entry_id) is None
+    assert hass.config_entries.async_get_entry(wifi_entry.entry_id) is not None
+
+
+@pytest.mark.asyncio
+async def test_async_setup_entry_backfills_live_serial_and_deduplicates(
+    hass, pikvm_cert, mock_device_info
+):
+    """Test async_setup_entry backfills missing serial/unique_id from coordinator.data (lines 380-386)."""
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        title="pikvm.local (192.168.1.40)",
+        unique_id=None,
+        data={
+            CONF_HOST: "https://192.168.1.34",
+            CONF_USERNAME: "admin",
+            CONF_PASSWORD: "secret_password",
+            CONF_CERTIFICATE: pikvm_cert,
+            CONF_TOTP: "",
+        },
+    )
+    entry.add_to_hass(hass)
+    entry.mock_state(hass, ConfigEntryState.SETUP_IN_PROGRESS)
+
+    with patch(
+        "custom_components.pikvm.coordinator.PiKVMClient.get_info",
+        new=AsyncMock(return_value=mock_device_info),
+    ), patch.object(
+        hass.config_entries, "async_forward_entry_setups", new=AsyncMock(return_value=True)
+    ):
+        result = await async_setup_entry(hass, entry)
+        assert result is True
+        assert entry.unique_id == "sn_12345"
+        assert entry.data[CONF_SERIAL] == "sn_12345"
+        # Stale IP suffix (192.168.1.40) on discovered_name ("pikvm.local") is cleaned up
+        assert entry.title == "pikvm.local"
+
+
 
 
 

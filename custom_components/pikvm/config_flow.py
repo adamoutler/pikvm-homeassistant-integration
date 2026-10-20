@@ -43,6 +43,7 @@ from .utils import (
     create_data_schema,
     find_existing_entry,
     get_translations,
+    normalize_serial,
     update_existing_entry,
 )
 
@@ -110,8 +111,13 @@ async def perform_device_setup(
         if flow_handler.hass is not None:
             await async_migrate_legacy_domain(flow_handler.hass)
 
+        norm_serial = (
+            normalize_serial(response.serial)
+            or (str(response.serial).strip().lower() if response.serial else None)
+        )
+
         # Check if the device is already configured now that we obtained serial number
-        existing_entry = find_existing_entry(flow_handler, response.serial)
+        existing_entry = find_existing_entry(flow_handler, norm_serial)
         if existing_entry:
             update_existing_entry(
                 flow_handler.hass,
@@ -129,8 +135,8 @@ async def perform_device_setup(
         user_input[CONF_TOTP] = totp_secret
         assert response.model is not None
         user_input[CONF_MODEL] = response.model.lower()
-        user_input[CONF_SERIAL] = response.serial
-        await flow_handler.async_set_unique_id(response.serial)
+        user_input[CONF_SERIAL] = norm_serial
+        await flow_handler.async_set_unique_id(norm_serial)
 
         # Finish config
         config_flow_result = flow_handler.async_create_entry(
@@ -143,6 +149,20 @@ async def perform_device_setup(
         errors["base"] = "unknown_error"
 
     return None, errors
+
+
+def _is_entry_host_in_advertised_ips(
+    entry: config_entries.ConfigEntry | None, advertised_ipv4s: set[str]
+) -> bool:
+    """Return True if entry's configured host is already among the device's advertised IPv4s."""
+    if entry is None or len(advertised_ipv4s) <= 1:
+        return False
+    raw_existing = str(entry.data.get(CONF_HOST, "")).strip()
+    try:
+        clean_existing = parse_host_port(raw_existing)[0]
+    except Exception:  # noqa: BLE001
+        clean_existing = raw_existing
+    return bool(clean_existing and clean_existing in advertised_ipv4s)
 
 
 class PiKVMConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
@@ -173,14 +193,13 @@ class PiKVMConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         raw_serial = discovery_info.properties.get("serial")
         if isinstance(raw_serial, bytes):
             raw_serial = raw_serial.decode("utf-8", errors="ignore")
-        serial = str(raw_serial).strip().lower() if raw_serial else None
+        serial = normalize_serial(str(raw_serial) if raw_serial is not None else None)
         ip_addr = getattr(discovery_info, "ip_address", None)
         host = str(discovery_info.host).strip() if discovery_info.host else None
 
         if (
             not serial
             or not host
-            or serial == "none"
             or host.lower() == "none"
             or ip_addr is None
         ):
@@ -192,6 +211,13 @@ class PiKVMConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             _LOGGER.debug("Discovered device with ZeroConf but IPv6 address: %s", host)
             return self.async_abort(reason="ipv6_address")
 
+        raw_ips = getattr(discovery_info, "ip_addresses", None) or ()
+        advertised_ipv4s: set[str] = {
+            str(ip).strip()
+            for ip in (host, *raw_ips)
+            if not isinstance(ip, IPv6Address) and ":" not in str(ip)
+        }
+
         _LOGGER.debug(
             "Discovered device with ZeroConf: host=%s, serial=%s, model=%s",
             host,
@@ -201,9 +227,15 @@ class PiKVMConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         if self.hass is not None:
             await async_migrate_legacy_domain(self.hass)
 
+        existing_entry = find_existing_entry(self, serial)
+        keep_existing_host = _is_entry_host_in_advertised_ips(
+            existing_entry, advertised_ipv4s
+        )
+        updates: dict[str, Any] | None = None if keep_existing_host else {CONF_HOST: host}
+
         await self.async_set_unique_id(serial)
         try:
-            self._abort_if_unique_id_configured(updates={CONF_HOST: host})
+            self._abort_if_unique_id_configured(updates=updates)
         except data_entry_flow.AbortFlow as ex:
             return self.async_abort(
                 reason=ex.reason,
@@ -211,16 +243,18 @@ class PiKVMConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             )
 
         # Fallback check for legacy unmigrated entries or mock test setups
-        existing_entry = find_existing_entry(self, serial)
         if existing_entry:
             _LOGGER.debug(
                 "Device with serial %s already configured, updating existing entry",
                 serial,
             )
+            fallback_updates: dict[str, Any] = {"serial": serial}
+            if not keep_existing_host:
+                fallback_updates[CONF_HOST] = host
             update_existing_entry(
                 self.hass,
                 existing_entry,
-                {CONF_HOST: host, "serial": serial},
+                fallback_updates,
             )
             return self.async_abort(reason="already_configured")
 

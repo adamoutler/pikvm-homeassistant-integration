@@ -53,6 +53,16 @@ def create_data_schema(user_input: Mapping[str, Any] | None = None) -> vol.Schem
     )
 
 
+def normalize_serial(serial: Any) -> str | None:
+    """Normalize a PiKVM hardware serial number."""
+    if not isinstance(serial, str):
+        return None
+    cleaned = serial.strip().lower()
+    if not cleaned or cleaned in ("none", "unknown"):
+        return None
+    return cleaned
+
+
 def update_existing_entry(
     hass: HomeAssistant | None,
     existing_entry: config_entries.ConfigEntry,
@@ -61,29 +71,39 @@ def update_existing_entry(
     """Update an existing config entry."""
     updated_data = dict(existing_entry.data)
     updated_data.update(user_input)
-    # Ensure the serial number is included in the updated data
-    if "serial" not in updated_data:
-        updated_data["serial"] = existing_entry.data.get("serial")
+    # Ensure the serial number is included and normalized in the updated data
+    raw_serial = updated_data.get("serial") or existing_entry.data.get("serial") or getattr(existing_entry, "unique_id", None)
+    norm_serial = normalize_serial(raw_serial)
+    updated_data["serial"] = norm_serial if norm_serial is not None else existing_entry.data.get("serial")
     if hass is not None:
-        hass.config_entries.async_update_entry(existing_entry, data=updated_data)
+        unique_id_arg = norm_serial if norm_serial and getattr(existing_entry, "unique_id", None) != norm_serial else None
+        if unique_id_arg is not None:
+            hass.config_entries.async_update_entry(
+                existing_entry, data=updated_data, unique_id=unique_id_arg
+            )
+        else:
+            hass.config_entries.async_update_entry(existing_entry, data=updated_data)
 
 
 def find_existing_entry(
     flow_handler: Any, serial: str | None
 ) -> config_entries.ConfigEntry | None:
     """Find an existing entry with the same serial number."""
-    if not serial:
+    norm_serial = normalize_serial(serial)
+    if not norm_serial:
         return None
 
     existing_entries: list[config_entries.ConfigEntry] = (
         flow_handler._async_current_entries()
     )
     for entry in existing_entries:
-        entry_serial = entry.data.get("serial")
-        _LOGGER.debug("Checking existing %s against %s", entry_serial, serial)
-        if entry_serial and entry_serial.lower() == serial.lower():
+        entry_serial = normalize_serial(entry.data.get("serial")) or normalize_serial(
+            getattr(entry, "unique_id", None)
+        )
+        _LOGGER.debug("Checking existing %s against %s", entry_serial, norm_serial)
+        if entry_serial == norm_serial:
             return entry
-    _LOGGER.debug("No existing entry found for %s, configuring", serial)
+    _LOGGER.debug("No existing entry found for %s, configuring", norm_serial)
     return None
 
 

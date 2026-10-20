@@ -1526,6 +1526,104 @@ async def test_reauth_flow_serial_fallback_from_config_entry_data(hass, pikvm_ce
         assert entry.data[CONF_PASSWORD] == "new_password"
 
 
+@pytest.mark.asyncio
+async def test_zeroconf_dual_nic_preserves_existing_entry_host(hass):
+    """Test dual-NIC Zeroconf discovery (Ethernet + Wi-Fi) preserves existing entry host without flip-flopping."""
+    from custom_components.pikvm.config_flow import _is_entry_host_in_advertised_ips
+
+    existing_entry = MockConfigEntry(
+        domain=DOMAIN,
+        title="pikvm-office",
+        unique_id="1000000067b50781",
+        data={
+            CONF_HOST: "https://192.168.1.105",
+            CONF_USERNAME: "admin",
+            CONF_PASSWORD: "secret",
+            CONF_SERIAL: "1000000067b50781",
+        },
+    )
+    existing_entry.add_to_hass(hass)
+
+    # Test _is_entry_host_in_advertised_ips helper directly including parse_host_port exception fallback
+    assert _is_entry_host_in_advertised_ips(
+        existing_entry, {"192.168.1.34", "192.168.1.105"}
+    ) is True
+    with patch(
+        "custom_components.pikvm.config_flow.parse_host_port",
+        side_effect=ValueError("bad host"),
+    ):
+        raw_ip_entry = MockConfigEntry(
+            domain=DOMAIN,
+            data={CONF_HOST: "192.168.1.105"},
+        )
+        assert _is_entry_host_in_advertised_ips(
+            raw_ip_entry, {"192.168.1.34", "192.168.1.105"}
+        ) is True
+
+    # Dual-NIC mDNS broadcast where primary ip_address is 192.168.1.34 (Ethernet)
+    # and ip_addresses includes both 192.168.1.34 and 192.168.1.105 (Wi-Fi)
+    discovery_info = ZeroconfServiceInfo(
+        ip_address=IPv4Address("192.168.1.34"),
+        ip_addresses=[
+            IPv4Address("192.168.1.34"),
+            IPv4Address("192.168.1.105"),
+            IPv6Address("fe80::e813:ddff:fe27:d6b3"),
+        ],
+        port=443,
+        hostname="pikvm-1000000067b50781.local.",
+        type="_pikvm._tcp.local.",
+        name="PiKVM on pikvm-office._pikvm._tcp.local.",
+        properties={"serial": "1000000067b50781", "model": "v4plus"},
+    )
+
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN,
+        context={"source": config_entries.SOURCE_ZEROCONF},
+        data=discovery_info,
+    )
+    assert result["type"] is FlowResultType.ABORT
+    assert result["reason"] == "already_configured"
+    # Existing host https://192.168.1.105 must NOT be overwritten by 192.168.1.34
+    assert existing_entry.data[CONF_HOST] == "https://192.168.1.105"
+
+    # Also test fallback path (line 252->254 false branch when unique_id is not yet set on existing_entry)
+    legacy_entry = MockConfigEntry(
+        domain=DOMAIN,
+        title="pikvm-dual-fallback",
+        unique_id=None,
+        data={
+            CONF_HOST: "https://192.168.1.105",
+            CONF_USERNAME: "admin",
+            CONF_PASSWORD: "secret",
+            CONF_SERIAL: "sn_dual_fallback",
+        },
+    )
+    await hass.config_entries.async_remove(existing_entry.entry_id)
+    legacy_entry.add_to_hass(hass)
+
+    discovery_fallback = ZeroconfServiceInfo(
+        ip_address=IPv4Address("192.168.1.34"),
+        ip_addresses=[
+            IPv4Address("192.168.1.34"),
+            IPv4Address("192.168.1.105"),
+        ],
+        port=443,
+        hostname="pikvm-fallback.local.",
+        type="_pikvm._tcp.local.",
+        name="PiKVM._pikvm._tcp.local.",
+        properties={"serial": "sn_dual_fallback", "model": "v4plus"},
+    )
+    result2 = await hass.config_entries.flow.async_init(
+        DOMAIN,
+        context={"source": config_entries.SOURCE_ZEROCONF},
+        data=discovery_fallback,
+    )
+    assert result2["type"] is FlowResultType.ABORT
+    assert result2["reason"] == "already_configured"
+    assert legacy_entry.data[CONF_HOST] == "https://192.168.1.105"
+    assert legacy_entry.unique_id == "sn_dual_fallback"
+
+
 
 
 
