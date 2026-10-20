@@ -12,7 +12,13 @@ import homeassistant.helpers.config_validation as cv
 import pyotp
 import voluptuous as vol
 from homeassistant import config_entries, data_entry_flow
-from homeassistant.components.zeroconf import ZeroconfServiceInfo
+
+try:
+    from homeassistant.helpers.service_info.zeroconf import (  # type: ignore[import-not-found]
+        ZeroconfServiceInfo,
+    )
+except ImportError:
+    from homeassistant.components.zeroconf import ZeroconfServiceInfo
 from homeassistant.const import CONF_PORT
 from homeassistant.core import callback
 from pikvm_aio import parse_host_port

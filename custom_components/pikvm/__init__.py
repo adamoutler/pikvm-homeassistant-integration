@@ -511,7 +511,3 @@ async def async_remove_config_entry_device(
         getattr(device_entry, "id", None) or "Unknown",
     )
     return True
-
-
-# Expose submodule for direct package access
-from . import config_flow as config_flow
