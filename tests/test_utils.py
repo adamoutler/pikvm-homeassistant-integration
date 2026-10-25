@@ -1,6 +1,6 @@
 """Tests for the utility functions in the PiKVM integration."""
 
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 from pytest_homeassistant_custom_component.common import MockConfigEntry
@@ -18,7 +18,6 @@ from custom_components.pikvm.utils import (
     find_existing_entry,
     format_url,
     get_nested_value,
-    get_translations,
     get_unique_id_base,
     update_existing_entry,
 )
@@ -99,22 +98,6 @@ def test_find_existing_entry():
     # Empty serial
     assert find_existing_entry(flow_handler, "") is None
     assert find_existing_entry(flow_handler, None) is None
-
-
-@pytest.mark.asyncio
-async def test_get_translations(hass):
-    """Test get_translations returns lookup callable."""
-    with patch(
-        "custom_components.pikvm.utils.async_get_translations",
-        new=AsyncMock(return_value={"component.pikvm.step.user.title": "PiKVM Setup"}),
-    ):
-        translate = await get_translations(hass, "en", DOMAIN)
-        assert translate("step.user.title", "Default") == "PiKVM Setup"
-        assert translate("step.user.missing", "Fallback") == "Fallback"
-
-    # Test error when hass is None
-    with pytest.raises(ValueError):
-        await get_translations(None, "en", DOMAIN)
 
 
 def test_get_unique_id_base():

@@ -49,7 +49,6 @@ async def test_coordinator_successful_update(hass, mock_device_info):
         totp="",
         cert="",
     )
-    await coordinator.async_setup()
 
     coordinator.client.get_info = AsyncMock(return_value=mock_device_info)
 
@@ -159,24 +158,6 @@ async def test_coordinator_communication_errors(
     assert exc_info.value.translation_domain == DOMAIN
     assert exc_info.value.translation_key == expected_key
     assert exc_info.value.translation_placeholders == expected_placeholders
-
-
-def test_coordinator_ssl_context_fallback():
-    """Test fallback when get_default_no_verify_context raises an Exception (covers lines 34-35)."""
-    import importlib
-
-    import custom_components.pikvm.coordinator as coordinator_mod
-
-    with patch(
-        "homeassistant.util.ssl.get_default_no_verify_context",
-        side_effect=Exception("Failed to get SSL context"),
-    ):
-        importlib.reload(coordinator_mod)
-        assert coordinator_mod._DEFAULT_NO_VERIFY_SSL_CONTEXT is None
-
-    # Restore module state
-    importlib.reload(coordinator_mod)
-    assert coordinator_mod._DEFAULT_NO_VERIFY_SSL_CONTEXT is not None
 
 
 @pytest.mark.asyncio

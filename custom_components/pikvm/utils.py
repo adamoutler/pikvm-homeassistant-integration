@@ -4,13 +4,12 @@ from __future__ import annotations
 
 import logging
 import math
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Mapping, Sequence
 from typing import Any
 
 import voluptuous as vol
 from homeassistant import config_entries
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers.translation import async_get_translations
 
 from .const import (
     CONF_HOST,
@@ -71,12 +70,21 @@ def update_existing_entry(
     """Update an existing config entry."""
     updated_data = dict(existing_entry.data)
     updated_data.update(user_input)
-    # Ensure the serial number is included and normalized in the updated data
-    raw_serial = updated_data.get("serial") or existing_entry.data.get("serial") or getattr(existing_entry, "unique_id", None)
+    raw_serial = (
+        updated_data.get("serial")
+        or existing_entry.data.get("serial")
+        or getattr(existing_entry, "unique_id", None)
+    )
     norm_serial = normalize_serial(raw_serial)
-    updated_data["serial"] = norm_serial if norm_serial is not None else existing_entry.data.get("serial")
+    updated_data["serial"] = (
+        norm_serial if norm_serial is not None else existing_entry.data.get("serial")
+    )
     if hass is not None:
-        unique_id_arg = norm_serial if norm_serial and getattr(existing_entry, "unique_id", None) != norm_serial else None
+        unique_id_arg = (
+            norm_serial
+            if norm_serial and getattr(existing_entry, "unique_id", None) != norm_serial
+            else None
+        )
         if unique_id_arg is not None:
             hass.config_entries.async_update_entry(
                 existing_entry, data=updated_data, unique_id=unique_id_arg
@@ -107,79 +115,26 @@ def find_existing_entry(
     return None
 
 
-async def get_translations(
-    hass: HomeAssistant, language: str, domain: str
-) -> Callable[[str, Any], Any]:
-    """Get translations for the given language and domain."""
-    if hass is None:
-        raise ValueError("HomeAssistant instance cannot be None")
-    translations = await async_get_translations(hass, language, "config")
-
-    def translate(key: str, default: Any) -> Any:
-        return translations.get(f"component.{domain}.{key}", default)
-
-    return translate
-
-
 def get_unique_id_base(
-    entry_or_host: config_entries.ConfigEntry | str,
-    coordinator_or_port: Any,
+    config_entry: Any,
+    coordinator: Any = None,
 ) -> str:
-    """Generate the unique_id_base for sensors or device tracking.
-
-    Supports both (config_entry, coordinator) and (host, port) signatures.
-    """
-    if isinstance(entry_or_host, str):
-        host = entry_or_host.strip()
-        for prefix in ("https://", "http://"):
-            host = host.removeprefix(prefix)
-        clean_host = host.rstrip("/").replace("/", "_").replace(":", "_")
-        return f"{clean_host}_{coordinator_or_port}"
-
-    config_entry = entry_or_host
-    coordinator = coordinator_or_port
-
-    serial: str | None = None
-    if coordinator is not None:
-        coord_serial = get_nested_value(
-            getattr(coordinator, "data", None), ["hw", "platform", "serial"]
-        )
-        if (
-            isinstance(coord_serial, (str, int))
-            and not isinstance(coord_serial, bool)
-            and str(coord_serial).strip()
-            and str(coord_serial).strip().lower() != "none"
-        ):
-            serial = str(coord_serial).strip()
-
-    if (
-        not serial
-        and hasattr(config_entry, "data")
-        and isinstance(config_entry.data, Mapping)
+    """Generate the unique_id_base for entities."""
+    coord_data = getattr(coordinator, "data", None)
+    entry_data = getattr(config_entry, "data", None)
+    for candidate in (
+        get_nested_value(coord_data, ["hw", "platform", "serial"]),
+        entry_data.get("serial") if isinstance(entry_data, Mapping) else None,
+        getattr(config_entry, "unique_id", None),
     ):
-        entry_serial = config_entry.data.get("serial")
         if (
-            isinstance(entry_serial, (str, int))
-            and not isinstance(entry_serial, bool)
-            and str(entry_serial).strip()
-            and str(entry_serial).strip().lower() != "none"
+            isinstance(candidate, (str, int))
+            and not isinstance(candidate, bool)
+            and (cleaned := str(candidate).strip())
+            and cleaned.lower() != "none"
         ):
-            serial = str(entry_serial).strip()
-
-    if not serial:
-        unique_id = getattr(config_entry, "unique_id", None)
-        if (
-            isinstance(unique_id, (str, int))
-            and not isinstance(unique_id, bool)
-            and str(unique_id).strip()
-            and str(unique_id).strip().lower() != "none"
-        ):
-            serial = str(unique_id).strip()
-
-    if not serial or serial.lower() == "none":
-        serial = "unknown"
-
-    return f"{config_entry.entry_id}_{serial}"
+            return f"{config_entry.entry_id}_{cleaned}"
+    return f"{config_entry.entry_id}_unknown"
 
 
 def get_nested_value(
@@ -187,13 +142,7 @@ def get_nested_value(
     keys: Sequence[str] | str,
     default: Any = None,
 ) -> Any:
-    """Safely get a nested value from a dictionary or mapping.
-
-    :param data: The dictionary/mapping to search.
-    :param keys: A sequence of keys to traverse the dictionary (or single key string).
-    :param default: The default value to return if the keys are not found.
-    :return: The value found or the default value.
-    """
+    """Safely get a nested value from a dictionary or mapping."""
     if data is None or keys is None:
         return default
     if isinstance(keys, str):
@@ -209,16 +158,7 @@ def get_nested_value(
                 data = data.get(key, _SENTINEL)
                 if data is _SENTINEL:
                     return default
-            except (
-                ArithmeticError,
-                AttributeError,
-                KeyError,
-                LookupError,
-                OSError,
-                RuntimeError,
-                TypeError,
-                ValueError,
-            ):
+            except Exception:  # noqa: BLE001
                 return default
         else:
             return default
@@ -226,11 +166,7 @@ def get_nested_value(
 
 
 def bytes_to_mb(bytes_value: Any) -> float | None:
-    """Convert bytes to megabytes.
-
-    :param bytes_value: The value in bytes.
-    :return: The value in megabytes, or None if bytes_value is None or invalid.
-    """
+    """Convert bytes to megabytes."""
     if bytes_value is None:
         return None
     try:

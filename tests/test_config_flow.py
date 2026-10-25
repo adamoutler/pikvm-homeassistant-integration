@@ -105,17 +105,11 @@ async def test_config_flow_user_cannot_connect(hass, pikvm_cert):
 
 @pytest.mark.asyncio
 async def test_config_flow_user_initial_form(hass):
-    """Ensure the initial user form is shown with translation fallbacks."""
-    translator = lambda key, default: default
-
-    with patch(
-        "custom_components.pikvm.config_flow.get_translations",
-        new=AsyncMock(return_value=translator),
-    ):
-        result = await hass.config_entries.flow.async_init(
-            DOMAIN,
-            context={"source": config_entries.SOURCE_USER},
-        )
+    """Ensure the initial user form is shown."""
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN,
+        context={"source": config_entries.SOURCE_USER},
+    )
 
     assert result["type"] == FlowResultType.FORM
     assert result["errors"] == {}
@@ -133,15 +127,9 @@ async def test_config_flow_user_discovery_retry_shows_form(hass, pikvm_cert):
         "serial": "SERIAL123",
     }
 
-    with (
-        patch(
-            "custom_components.pikvm.config_flow.perform_device_setup",
-            new=AsyncMock(return_value=(None, {"base": "cannot_connect"})),
-        ),
-        patch(
-            "custom_components.pikvm.config_flow.get_translations",
-            new=AsyncMock(return_value=lambda key, default: default),
-        ),
+    with patch(
+        "custom_components.pikvm.config_flow.perform_device_setup",
+        new=AsyncMock(return_value=(None, {"base": "cannot_connect"})),
     ):
         result = await flow.async_step_zeroconf_confirm("add_device")
 
@@ -327,40 +315,6 @@ async def test_perform_device_setup_localhost_name(hass, pikvm_cert):
     assert errors is None
 
 
-@pytest.mark.asyncio
-async def test_async_step_import_creates_entry(hass, pikvm_cert):
-    """Importing from configuration.yaml should reuse the user step."""
-    response = PiKVMResponse(True, "V4PLUS", "pikvm-5555", None, None)
-
-    with (
-        patch(
-            "custom_components.pikvm.config_flow.fetch_serialized_cert",
-            new=AsyncMock(return_value=pikvm_cert),
-        ),
-        patch(
-            "custom_components.pikvm.config_flow.is_pikvm_device",
-            new=AsyncMock(return_value=response),
-        ),
-        patch(
-            "custom_components.pikvm.config_flow.find_existing_entry",
-            return_value=None,
-        ),
-    ):
-        result = await hass.config_entries.flow.async_init(
-            DOMAIN,
-            context={"source": config_entries.SOURCE_IMPORT},
-            data={
-                CONF_HOST: "https://pikvm.local",
-                CONF_USERNAME: "admin",
-                CONF_PASSWORD: "secret",
-            },
-        )
-
-    assert result["type"] == FlowResultType.CREATE_ENTRY
-    assert result["title"] == "PiKVM"
-    assert result["data"][CONF_MODEL] == "v4plus"
-
-
 def test_async_get_options_flow_returns_handler():
     """Validate the options flow factory."""
     entry = MockConfigEntry(domain=DOMAIN, data={})
@@ -530,51 +484,6 @@ async def test_async_step_zeroconf_confirm_success(hass, pikvm_cert):
 
 
 @pytest.mark.asyncio
-async def test_async_step_user_with_translation_dict(hass):
-    """Ensure dictionary-based translations flow through placeholders."""
-    translations = {
-        "step.user.data.url": "Translated URL",
-        "step.user.data.username": "Translated Username",
-        "step.user.data.password": "Translated Password",
-    }
-
-    with patch(
-        "custom_components.pikvm.config_flow.get_translations",
-        new=AsyncMock(return_value=translations),
-    ):
-        result = await hass.config_entries.flow.async_init(
-            DOMAIN,
-            context={"source": config_entries.SOURCE_USER},
-        )
-
-    assert result["type"] == FlowResultType.FORM
-    placeholders = result["description_placeholders"]
-    assert placeholders["url"] == "Translated URL"
-    assert placeholders["username"] == "Translated Username"
-    assert placeholders["password"] == "Translated Password"
-
-
-@pytest.mark.asyncio
-async def test_async_step_user_without_translations_uses_defaults(hass):
-    """Default placeholders should be provided when translations are unavailable."""
-
-    with patch(
-        "custom_components.pikvm.config_flow.get_translations",
-        new=AsyncMock(return_value=None),
-    ):
-        result = await hass.config_entries.flow.async_init(
-            DOMAIN,
-            context={"source": config_entries.SOURCE_USER},
-        )
-
-    assert result["type"] == FlowResultType.FORM
-    placeholders = result["description_placeholders"]
-    assert placeholders["url"] == "URL or IP address of the PiKVM device"
-    assert placeholders["username"] == "Username for PiKVM"
-    assert placeholders["password"] == "Password for PiKVM"
-
-
-@pytest.mark.asyncio
 async def test_async_step_user_discovery_password_cleared(hass):
     """Discovery-sourced flows should blank passwords before showing the form."""
     flow = config_flow.PiKVMConfigFlow()
@@ -585,11 +494,7 @@ async def test_async_step_user_discovery_password_cleared(hass):
         CONF_PASSWORD: "secret",
     }
 
-    with patch(
-        "custom_components.pikvm.config_flow.get_translations",
-        new=AsyncMock(return_value=lambda key, default: default),
-    ):
-        result = await flow.async_step_user()
+    result = await flow.async_step_user()
 
     assert result["type"] == FlowResultType.FORM
     assert flow._discovery_info[CONF_PASSWORD] == ""
@@ -1036,26 +941,6 @@ async def test_perform_device_setup_parse_host_port_exception(hass, pikvm_cert):
 
     assert entry == {"type": FlowResultType.CREATE_ENTRY}
     assert errors is None
-
-
-def test_config_flow_get_reauth_entry_fallback(hass):
-    """Test _get_reauth_entry fallback when super() lacks the method (covers lines 318-319)."""
-    entry = MockConfigEntry(domain=DOMAIN, data={})
-    entry.add_to_hass(hass)
-
-    flow = config_flow.PiKVMConfigFlow()
-    flow.hass = hass
-    flow.context = {"entry_id": entry.entry_id}
-
-    orig_method = getattr(config_entries.ConfigFlow, "_get_reauth_entry", None)
-    try:
-        if orig_method is not None:
-            delattr(config_entries.ConfigFlow, "_get_reauth_entry")
-        reauth_entry = flow._get_reauth_entry()
-        assert reauth_entry == entry
-    finally:
-        if orig_method is not None:
-            config_entries.ConfigFlow._get_reauth_entry = orig_method
 
 
 @pytest.mark.asyncio

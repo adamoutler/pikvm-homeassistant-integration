@@ -51,26 +51,18 @@ def _is_throttling_on(data: Any) -> bool:
 def _get_throttling_attributes(data: Any) -> dict[str, Any]:
     """Return attributes dictionary for throttling binary sensor."""
     throttling = get_nested_value(data, ["hw", "health", "throttling"])
-    if isinstance(throttling, Mapping):
-        return dict(throttling)
-    return {}
+    return dict(throttling) if isinstance(throttling, Mapping) else {}
 
 
 def _is_throttling_available(data: Any) -> bool:
     """Return True if throttling telemetry is available."""
-    health = get_nested_value(data, ["hw", "health"])
-    if not isinstance(health, Mapping):
-        return False
-    hw = get_nested_value(data, ["hw"])
-    return "throttling" in health or (isinstance(hw, Mapping) and "health" in hw)
+    return isinstance(get_nested_value(data, ["hw", "health"]), Mapping)
 
 
 def _get_msd_drive_attributes(data: Any) -> dict[str, Any]:
     """Return attributes dictionary for MSD drive binary sensor."""
     drive = get_nested_value(data, ["msd", "drive"])
-    if isinstance(drive, Mapping):
-        return dict(drive)
-    return {}
+    return dict(drive) if isinstance(drive, Mapping) else {}
 
 
 BINARY_SENSOR_DESCRIPTIONS: tuple[PiKVMBinarySensorEntityDescription, ...] = (
@@ -96,9 +88,13 @@ BINARY_SENSOR_DESCRIPTIONS: tuple[PiKVMBinarySensorEntityDescription, ...] = (
         translation_key="msd_drive",
         device_class=BinarySensorDeviceClass.CONNECTIVITY,
         entity_category=EntityCategory.DIAGNOSTIC,
-        is_on_fn=lambda data: bool(get_nested_value(data, ["msd", "drive", "is_mounted"], False)),
+        is_on_fn=lambda data: bool(
+            get_nested_value(data, ["msd", "drive", "is_mounted"], False)
+        ),
         attributes_fn=_get_msd_drive_attributes,
-        available_fn=lambda data: isinstance(get_nested_value(data, ["msd", "drive"]), Mapping),
+        available_fn=lambda data: isinstance(
+            get_nested_value(data, ["msd", "drive"]), Mapping
+        ),
     ),
 )
 
@@ -115,7 +111,6 @@ async def async_setup_entry(
     )
     unique_id_base = get_unique_id_base(config_entry, coordinator)
 
-    # Clean up legacy sensor entities in registry to complete platform migration
     _async_cleanup_legacy_sensors(hass, unique_id_base, coordinator.data)
 
     entities: list[BinarySensorEntity] = [
@@ -123,7 +118,6 @@ async def async_setup_entry(
         for description in BINARY_SENSOR_DESCRIPTIONS
     ]
 
-    # Dynamically create binary sensors for extras (background services)
     extras = get_nested_value(coordinator.data, ["extras"], {})
     if isinstance(extras, Mapping):
         for extra_name, extra_data in extras.items():
@@ -139,8 +133,13 @@ async def async_setup_entry(
     ent_reg = er.async_get(hass)
     valid_uids = {e.unique_id for e in entities}
     if not unique_id_base.endswith("_unknown"):
-        for ent_entry in er.async_entries_for_config_entry(ent_reg, config_entry.entry_id):
-            if ent_entry.domain == "binary_sensor" and ent_entry.unique_id not in valid_uids:
+        for ent_entry in er.async_entries_for_config_entry(
+            ent_reg, config_entry.entry_id
+        ):
+            if (
+                ent_entry.domain == "binary_sensor"
+                and ent_entry.unique_id not in valid_uids
+            ):
                 _LOGGER.info(
                     "Removing stale legacy binary_sensor entity %s (unique_id: %s)",
                     ent_entry.entity_id,
@@ -182,90 +181,51 @@ class PiKVMBinarySensor(PiKVMEntity, BinarySensorEntity):
     """Representation of a PiKVM binary sensor."""
 
     entity_description: PiKVMBinarySensorEntityDescription
-    _attr_has_entity_name = True
-
-    def __init__(
-        self,
-        coordinator: PiKVMDataUpdateCoordinator,
-        unique_id_base: str,
-        description: PiKVMBinarySensorEntityDescription,
-    ) -> None:
-        """Initialize the binary sensor."""
-        super().__init__(coordinator, unique_id_base)
-        self.entity_description = description
-        self._attr_unique_id = f"{unique_id_base}_{description.key}"
 
     @property
     def is_on(self) -> bool | None:
         """Return true if the binary sensor is on."""
         return self.entity_description.is_on_fn(self.coordinator.data)
 
-    @property
-    def available(self) -> bool:
-        """Return True if the entity is available."""
-        if not super().available:
-            return False
-        if self.entity_description.available_fn is not None:
-            return self.entity_description.available_fn(self.coordinator.data)
-        return True
 
-    @property
-    def extra_state_attributes(self) -> dict[str, Any]:
-        """Return the state attributes."""
-        attrs: dict[str, Any] = {"ip": self.coordinator.url}
-        if self.entity_description.attributes_fn is not None:
-            extra = self.entity_description.attributes_fn(self.coordinator.data)
-            if extra and isinstance(extra, Mapping):
-                attrs.update(extra)
-        return attrs
-
-
-class PiKVMExtraBinarySensor(PiKVMEntity, BinarySensorEntity):
+class PiKVMExtraBinarySensor(PiKVMBinarySensor):
     """Representation of a PiKVM extra service binary sensor."""
-
-    _attr_has_entity_name = True
-    _attr_device_class = BinarySensorDeviceClass.RUNNING
-    _attr_entity_category = EntityCategory.DIAGNOSTIC
 
     def __init__(
         self,
         coordinator: PiKVMDataUpdateCoordinator,
         extra_name: str,
-        extra_data: dict[str, Any],
-        unique_id_base: str,
+        extra_data: dict[str, Any] | None = None,
+        unique_id_base: str = "",
         device_name: str | None = None,
     ) -> None:
         """Initialize the extra service binary sensor."""
-        super().__init__(coordinator, unique_id_base)
         self._extra_name = extra_name
-        self._attr_unique_id = f"{unique_id_base}_extra_{extra_name}"
-        self._attr_translation_key = f"extra_{extra_name}"
-
-    @property
-    def is_on(self) -> bool:
-        """Return true if the extra service is running."""
-        extra_data = get_nested_value(
-            self.coordinator.data, ["extras", self._extra_name], {}
+        super().__init__(
+            coordinator,
+            unique_id_base,
+            PiKVMBinarySensorEntityDescription(
+                key=f"extra_{extra_name}",
+                translation_key=f"extra_{extra_name}",
+                device_class=BinarySensorDeviceClass.RUNNING,
+                entity_category=EntityCategory.DIAGNOSTIC,
+                is_on_fn=lambda data: bool(
+                    d.get("is_running", False)
+                    if isinstance(
+                        d := get_nested_value(data, ["extras", extra_name]), Mapping
+                    )
+                    else False
+                ),
+                available_fn=lambda data: (
+                    isinstance(extras := get_nested_value(data, ["extras"]), Mapping)
+                    and extra_name in extras
+                ),
+                attributes_fn=lambda data: (
+                    dict(d)
+                    if isinstance(
+                        d := get_nested_value(data, ["extras", extra_name]), Mapping
+                    )
+                    else {}
+                ),
+            ),
         )
-        if isinstance(extra_data, Mapping):
-            return bool(extra_data.get("is_running", False))
-        return False
-
-    @property
-    def available(self) -> bool:
-        """Return True if the entity is available."""
-        if not super().available:
-            return False
-        extras = get_nested_value(self.coordinator.data, ["extras"], {})
-        return isinstance(extras, Mapping) and self._extra_name in extras
-
-    @property
-    def extra_state_attributes(self) -> dict[str, Any]:
-        """Return the state attributes."""
-        attrs: dict[str, Any] = {"ip": self.coordinator.url}
-        extra_data = get_nested_value(
-            self.coordinator.data, ["extras", self._extra_name], {}
-        )
-        if extra_data and isinstance(extra_data, Mapping):
-            attrs.update(extra_data)
-        return attrs

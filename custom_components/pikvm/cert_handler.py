@@ -27,9 +27,6 @@ try:
 except Exception:  # noqa: BLE001
     _DEFAULT_NO_VERIFY_SSL_CONTEXT = None
 
-# Backwards compatibility alias
-async_fetch_peer_certificate = fetch_remote_cert
-
 
 class PiKVMResponse(NamedTuple):
     """Response returned by is_pikvm_device verification helper."""

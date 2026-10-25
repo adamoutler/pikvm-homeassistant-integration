@@ -33,20 +33,13 @@ from pikvm_aio import (
     parse_host_port,
 )
 
+from .cert_handler import _DEFAULT_NO_VERIFY_SSL_CONTEXT
 from .const import DOMAIN
 from .utils import get_nested_value
 
 _LOGGER = logging.getLogger(__name__)
 
 DEFAULT_SCAN_INTERVAL = 30
-
-_DEFAULT_NO_VERIFY_SSL_CONTEXT: ssl.SSLContext | None = None
-try:
-    from homeassistant.util.ssl import get_default_no_verify_context
-
-    _DEFAULT_NO_VERIFY_SSL_CONTEXT = get_default_no_verify_context()
-except Exception:  # noqa: BLE001
-    _DEFAULT_NO_VERIFY_SSL_CONTEXT = None
 
 
 class PiKVMDataUpdateCoordinator(DataUpdateCoordinator[PiKVMDeviceInfo]):
@@ -105,9 +98,6 @@ class PiKVMDataUpdateCoordinator(DataUpdateCoordinator[PiKVMDeviceInfo]):
             check_hostname=False,
             ssl_context=_DEFAULT_NO_VERIFY_SSL_CONTEXT,
         )
-
-    async def async_setup(self) -> None:
-        """Async setup method (retained for lifecycle compatibility)."""
 
     @property
     def device_name(self) -> str:

@@ -30,7 +30,7 @@ from custom_components.pikvm.sensor import (
     _get_msd_storage,
     _get_msd_storage_attributes,
 )
-from custom_components.pikvm.utils import bytes_to_mb, get_unique_id_base
+from custom_components.pikvm.utils import bytes_to_mb
 
 
 @pytest.fixture
@@ -452,13 +452,6 @@ def test_bytes_to_mb_invalid():
     """Test bytes_to_mb returns None on invalid non-numeric inputs."""
     assert bytes_to_mb("invalid") is None
     assert bytes_to_mb([123]) is None
-
-
-def test_get_unique_id_base_host_port_variants():
-    """Test get_unique_id_base with host and port signatures and protocol stripping."""
-    assert get_unique_id_base("https://pikvm.local:8443/", 443) == "pikvm.local_8443_443"
-    assert get_unique_id_base("http://192.168.1.100/", 80) == "192.168.1.100_80"
-    assert get_unique_id_base("pikvm.local", 443) == "pikvm.local_443"
 
 
 def test_sensors_numeric_hardening_overflow_and_non_finite():

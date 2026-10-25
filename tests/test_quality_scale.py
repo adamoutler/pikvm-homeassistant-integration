@@ -451,7 +451,6 @@ async def test_f2_coordinator_polling_success(
         totp="",
         cert="",
     )
-    await coordinator.async_setup()
     coordinator.client.get_info = AsyncMock(return_value=sample_device_info)
 
     data = await coordinator._async_update_data()

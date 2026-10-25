@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import binascii
 import logging
-from collections.abc import Callable, Mapping
+from collections.abc import Mapping
 from ipaddress import IPv6Address
 from typing import Any
 
@@ -42,12 +42,22 @@ from .options_flow import PiKVMOptionsFlowHandler
 from .utils import (
     create_data_schema,
     find_existing_entry,
-    get_translations,
     normalize_serial,
     update_existing_entry,
 )
 
 _LOGGER = logging.getLogger(__name__)
+
+
+def _validate_totp(totp_secret: str) -> tuple[str, str | None]:
+    """Validate a base32 TOTP secret and return (current_code, error_key)."""
+    if not totp_secret:
+        return "", None
+    try:
+        return pyotp.TOTP(totp_secret).now(), None
+    except (binascii.Error, ValueError):
+        _LOGGER.debug("Invalid base32 string for TOTP secret")
+        return "", "invalid_totp"
 
 
 async def perform_device_setup(
@@ -66,23 +76,16 @@ async def perform_device_setup(
     )
 
     try:
-        if len(totp_secret) > 0:
-            try:
-                totp_code = pyotp.TOTP(totp_secret).now()
-            except (binascii.Error, ValueError):
-                _LOGGER.debug("Invalid base32 string for TOTP secret")
-                errors["base"] = "invalid_totp"
-                return None, errors
-        else:
-            totp_code = ""
+        totp_code, totp_err = _validate_totp(totp_secret)
+        if totp_err:
+            errors["base"] = totp_err
+            return None, errors
 
-        # Fetch the certificate
         serialized_cert = await fetch_serialized_cert(flow_handler.hass, host)
         if not serialized_cert:
             errors["base"] = "cannot_fetch_cert"
             return None, errors
 
-        # Store the certificate
         user_input[CONF_CERTIFICATE] = serialized_cert
 
         response = await is_pikvm_device(
@@ -116,13 +119,17 @@ async def perform_device_setup(
             or (str(response.serial).strip().lower() if response.serial else None)
         )
 
-        # Check if the device is already configured now that we obtained serial number
         existing_entry = find_existing_entry(flow_handler, norm_serial)
         if existing_entry:
             update_existing_entry(
                 flow_handler.hass,
                 existing_entry,
-                {CONF_HOST: host, CONF_USERNAME: username, CONF_PASSWORD: password, CONF_TOTP: totp_secret},
+                {
+                    CONF_HOST: host,
+                    CONF_USERNAME: username,
+                    CONF_PASSWORD: password,
+                    CONF_TOTP: totp_secret,
+                },
             )
             return flow_handler.async_abort(reason="already_configured"), None
 
@@ -133,12 +140,10 @@ async def perform_device_setup(
         entry_title = device_name if device_name else MANUFACTURER
 
         user_input[CONF_TOTP] = totp_secret
-        assert response.model is not None
-        user_input[CONF_MODEL] = response.model.lower()
+        user_input[CONF_MODEL] = (response.model or MANUFACTURER).lower()
         user_input[CONF_SERIAL] = norm_serial
         await flow_handler.async_set_unique_id(norm_serial)
 
-        # Finish config
         config_flow_result = flow_handler.async_create_entry(
             title=entry_title, data=user_input
         )
@@ -169,23 +174,14 @@ class PiKVMConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     """Handle a config flow for PiKVM."""
 
     VERSION = 1
-    CONNECTION_CLASS = config_entries.CONN_CLASS_LOCAL_POLL
 
     def __init__(self) -> None:
         """Initialize the PiKVMConfigFlow."""
         self.context = {}
         self.handler = DOMAIN
         self._errors: dict[str, str] = {}
-        self.translations: Callable[[str, Any], Any] | None = None
         self._discovery_info: dict[str, str] = {}
 
-    async def async_step_import(
-        self, user_input: dict[str, Any] | None = None
-    ) -> config_entries.ConfigFlowResult:
-        """Handle import."""
-        return await self.async_step_user(user_input=user_input)
-
-    # lets filter out the zeroconf discovery of ipv6 addresses
     async def async_step_zeroconf(
         self, discovery_info: ZeroconfServiceInfo
     ) -> config_entries.ConfigFlowResult:
@@ -197,17 +193,13 @@ class PiKVMConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         ip_addr = getattr(discovery_info, "ip_address", None)
         host = str(discovery_info.host).strip() if discovery_info.host else None
 
-        if (
-            not serial
-            or not host
-            or host.lower() == "none"
-            or ip_addr is None
-        ):
+        if not serial or not host or host.lower() == "none" or ip_addr is None:
             _LOGGER.debug("Discovered device with ZeroConf but missing serial or host")
             return self.async_abort(reason="missing_serial_or_host")
 
-        # Filter out IPv6 addresses
-        if ":" in host or isinstance(getattr(discovery_info, "ip_address", None), IPv6Address):
+        if ":" in host or isinstance(
+            getattr(discovery_info, "ip_address", None), IPv6Address
+        ):
             _LOGGER.debug("Discovered device with ZeroConf but IPv6 address: %s", host)
             return self.async_abort(reason="ipv6_address")
 
@@ -231,7 +223,9 @@ class PiKVMConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         keep_existing_host = _is_entry_host_in_advertised_ips(
             existing_entry, advertised_ipv4s
         )
-        updates: dict[str, Any] | None = None if keep_existing_host else {CONF_HOST: host}
+        updates: dict[str, Any] | None = (
+            None if keep_existing_host else {CONF_HOST: host}
+        )
 
         await self.async_set_unique_id(serial)
         try:
@@ -242,7 +236,6 @@ class PiKVMConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 description_placeholders=ex.description_placeholders,
             )
 
-        # Fallback check for legacy unmigrated entries or mock test setups
         if existing_entry:
             _LOGGER.debug(
                 "Device with serial %s already configured, updating existing entry",
@@ -258,7 +251,6 @@ class PiKVMConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             )
             return self.async_abort(reason="already_configured")
 
-        # Offer options to add or ignore
         self._discovery_info = {
             CONF_HOST: host,
             CONF_USERNAME: DEFAULT_USERNAME,
@@ -300,7 +292,6 @@ class PiKVMConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             )
             return self.async_abort(reason="ignored")
 
-        # Proceed with adding the device
         entry, errors = await perform_device_setup(self, self._discovery_info)
         if entry:
             return entry
@@ -314,17 +305,9 @@ class PiKVMConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         """Handle the initial step."""
         if self.hass is not None:
             await async_migrate_legacy_domain(self.hass)
-            translations = await get_translations(
-                self.hass, self.hass.config.language, DOMAIN
-            )
-            if isinstance(translations, Mapping):
-                trans_dict: Mapping[str, Any] = translations
-                self.translations = lambda key, default: str(trans_dict.get(key, default))
-            elif callable(translations):
-                self.translations = translations
 
         errors = self._errors
-        self._errors = {}  # Reset errors after using them
+        self._errors = {}
 
         if user_input is not None:
             _LOGGER.debug(
@@ -344,46 +327,16 @@ class PiKVMConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 CONF_HOST: "",
                 CONF_USERNAME: DEFAULT_USERNAME,
                 CONF_PASSWORD: DEFAULT_PASSWORD,
-                CONF_TOTP: ""
+                CONF_TOTP: "",
             }
             if self._discovery_info:
                 user_input[CONF_PASSWORD] = ""
 
-        data_schema = create_data_schema(user_input)
-
-        def _translate(key: str, default: str) -> str:
-            if self.translations is not None:
-                return str(self.translations(key, default))
-            return default
-
         return self.async_show_form(
             step_id="user",
-            data_schema=data_schema,
+            data_schema=create_data_schema(user_input),
             errors=errors,
-            description_placeholders={
-                "url": _translate(
-                    "step.user.data.url", "URL or IP address of the PiKVM device"
-                ),
-                "username": _translate(
-                    "step.user.data.username", "Username for PiKVM"
-                ),
-                "password": _translate(
-                    "step.user.data.password", "Password for PiKVM"
-                ),
-                "totp": _translate(
-                    "step.user.data.totp", "2FA secret for PiKVM (if enabled)"
-                ),
-            },
         )
-
-    def _get_reauth_entry(self) -> config_entries.ConfigEntry:
-        """Get the config entry being reauthenticated."""
-        if hasattr(super(), "_get_reauth_entry"):
-            return super()._get_reauth_entry()
-        entry_id = str(self.context.get("entry_id") or "")
-        entry = self.hass.config_entries.async_get_entry(entry_id)
-        assert entry is not None
-        return entry
 
     async def async_step_reauth(
         self, entry_data: Mapping[str, Any]
@@ -400,19 +353,19 @@ class PiKVMConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
         if user_input is not None and reauth_entry is not None:
             host = reauth_entry.data[CONF_HOST]
-            username = user_input.get(CONF_USERNAME, reauth_entry.data.get(CONF_USERNAME, DEFAULT_USERNAME))
-            password = user_input.get(CONF_PASSWORD, reauth_entry.data.get(CONF_PASSWORD, DEFAULT_PASSWORD))
+            username = user_input.get(
+                CONF_USERNAME, reauth_entry.data.get(CONF_USERNAME, DEFAULT_USERNAME)
+            )
+            password = user_input.get(
+                CONF_PASSWORD, reauth_entry.data.get(CONF_PASSWORD, DEFAULT_PASSWORD)
+            )
             totp_secret = user_input.get(CONF_TOTP, "").strip()
             cert = reauth_entry.data.get(CONF_CERTIFICATE, "")
 
-            totp_code = ""
-            if totp_secret:
-                try:
-                    totp_code = pyotp.TOTP(totp_secret).now()
-                except (binascii.Error, ValueError):
-                    errors["base"] = "invalid_totp"
-
-            if not errors:
+            totp_code, totp_err = _validate_totp(totp_secret)
+            if totp_err:
+                errors["base"] = totp_err
+            else:
                 response = await is_pikvm_device(
                     self.hass, host, username, password + totp_code, cert
                 )
@@ -483,7 +436,7 @@ class PiKVMConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         reconfigure_entry = self._get_reconfigure_entry()
 
         if user_input is not None and reconfigure_entry is not None:
-            host = user_input[CONF_HOST]
+            host = user_input[CONF_HOST].rstrip("/")
             if user_input.get(CONF_PORT):
                 port = user_input[CONF_PORT]
                 if f":{port}" not in host:
@@ -493,14 +446,10 @@ class PiKVMConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             password = user_input[CONF_PASSWORD]
             totp_secret = user_input.get(CONF_TOTP, "").strip()
 
-            totp_code = ""
-            if totp_secret:
-                try:
-                    totp_code = pyotp.TOTP(totp_secret).now()
-                except (binascii.Error, ValueError):
-                    errors["base"] = "invalid_totp"
-
-            if not errors:
+            totp_code, totp_err = _validate_totp(totp_secret)
+            if totp_err:
+                errors["base"] = totp_err
+            else:
                 serialized_cert = await fetch_serialized_cert(self.hass, host)
                 if not serialized_cert:
                     errors["base"] = "cannot_fetch_cert"
@@ -513,7 +462,9 @@ class PiKVMConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     elif not response.success:
                         errors["base"] = "cannot_connect"
                     else:
-                        await self.async_set_unique_id(response.serial)
+                        await self.async_set_unique_id(
+                            normalize_serial(response.serial) or response.serial
+                        )
                         self._abort_if_unique_id_mismatch(reason="unique_id_mismatched")
 
                         return self.async_update_reload_and_abort(
@@ -525,7 +476,11 @@ class PiKVMConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                                 CONF_PASSWORD: password,
                                 CONF_TOTP: totp_secret,
                                 CONF_CERTIFICATE: serialized_cert,
-                                CONF_MODEL: response.model.lower() if response.model else reconfigure_entry.data.get(CONF_MODEL),
+                                CONF_MODEL: (
+                                    response.model.lower()
+                                    if response.model
+                                    else reconfigure_entry.data.get(CONF_MODEL)
+                                ),
                             },
                         )
 
@@ -537,8 +492,12 @@ class PiKVMConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
         if reconfigure_entry is not None:
             default_host = reconfigure_entry.data.get(CONF_HOST, "")
-            default_username = reconfigure_entry.data.get(CONF_USERNAME, DEFAULT_USERNAME)
-            default_password = reconfigure_entry.data.get(CONF_PASSWORD, DEFAULT_PASSWORD)
+            default_username = reconfigure_entry.data.get(
+                CONF_USERNAME, DEFAULT_USERNAME
+            )
+            default_password = reconfigure_entry.data.get(
+                CONF_PASSWORD, DEFAULT_PASSWORD
+            )
             default_totp = reconfigure_entry.data.get(CONF_TOTP, "")
             clean_host = parse_host_port(default_host)[0]
 

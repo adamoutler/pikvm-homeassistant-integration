@@ -45,37 +45,28 @@ class PiKVMSensorEntityDescription(SensorEntityDescription):
     available_fn: Callable[[Any], bool] | None = None
 
 
-def _get_cpu_temp(data: Any) -> float | None:
-    val = get_nested_value(data, ["hw", "health", "temp", "cpu"])
+def _get_finite_float(data: Any, path: list[str]) -> float | None:
+    """Extract and validate a finite float from nested telemetry data."""
+    val = get_nested_value(data, path)
+    if val is None:
+        return None
     try:
-        if val is None:
-            return None
         num = float(val)
         return num if math.isfinite(num) else None
     except (ValueError, TypeError, OverflowError):
         return None
+
+
+def _get_cpu_temp(data: Any) -> float | None:
+    return _get_finite_float(data, ["hw", "health", "temp", "cpu"])
 
 
 def _get_cpu_utilization(data: Any) -> float | None:
-    val = get_nested_value(data, ["hw", "performance", "cpu", "utilization"])
-    try:
-        if val is None:
-            return None
-        num = float(val)
-        return num if math.isfinite(num) else None
-    except (ValueError, TypeError, OverflowError):
-        return None
+    return _get_finite_float(data, ["hw", "performance", "cpu", "utilization"])
 
 
 def _get_memory_utilization(data: Any) -> float | None:
-    val = get_nested_value(data, ["hw", "performance", "memory", "utilization"])
-    try:
-        if val is None:
-            return None
-        num = float(val)
-        return num if math.isfinite(num) else None
-    except (ValueError, TypeError, OverflowError):
-        return None
+    return _get_finite_float(data, ["hw", "performance", "memory", "utilization"])
 
 
 def _get_memory_attributes(data: Any) -> dict[str, Any]:
@@ -260,42 +251,11 @@ class PiKVMSensor(PiKVMEntity, SensorEntity):
     """Representation of a PiKVM sensor."""
 
     entity_description: PiKVMSensorEntityDescription
-    _attr_has_entity_name = True
-
-    def __init__(
-        self,
-        coordinator: PiKVMDataUpdateCoordinator,
-        unique_id_base: str,
-        description: PiKVMSensorEntityDescription,
-    ) -> None:
-        """Initialize the sensor."""
-        super().__init__(coordinator, unique_id_base)
-        self.entity_description = description
-        self._attr_unique_id = f"{unique_id_base}_{description.key}"
 
     @property
     def native_value(self) -> StateType:
         """Return the state of the sensor."""
         return self.entity_description.value_fn(self.coordinator.data)
-
-    @property
-    def available(self) -> bool:
-        """Return True if the sensor data is available."""
-        if not super().available:
-            return False
-        if self.entity_description.available_fn is not None:
-            return self.entity_description.available_fn(self.coordinator.data)
-        return True
-
-    @property
-    def extra_state_attributes(self) -> dict[str, Any]:
-        """Return the state attributes."""
-        attrs: dict[str, Any] = {"ip": self.coordinator.url}
-        if self.entity_description.attributes_fn is not None:
-            extra = self.entity_description.attributes_fn(self.coordinator.data)
-            if extra:
-                attrs.update(extra)
-        return attrs
 
 
 async def async_setup_entry(

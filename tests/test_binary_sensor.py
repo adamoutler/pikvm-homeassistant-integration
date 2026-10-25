@@ -19,7 +19,6 @@ from custom_components.pikvm.binary_sensor import (
     _async_cleanup_legacy_sensors,
     _get_msd_drive_attributes,
     _get_throttling_attributes,
-    _is_throttling_available,
     _is_throttling_on,
     async_setup_entry,
 )
@@ -104,7 +103,7 @@ async def test_binary_sensor_setup_entry(hass, mock_coordinator):
     # 3 standard (throttling, msd_enabled, msd_drive) + 2 extras (vnc, ipmi) = 5
     assert len(entities) == 5
 
-    keys = [e.entity_description.key if hasattr(e, "entity_description") else e._extra_name for e in entities]
+    keys = [getattr(e, "_extra_name", None) or e.entity_description.key for e in entities]
     assert "throttling" in keys
     assert "msd_enabled" in keys
     assert "msd_drive" in keys
@@ -372,23 +371,6 @@ def test_binary_sensor_throttling_defensive_telemetry(mock_coordinator: MagicMoc
     # 7. Health is Mapping without throttling key, but hw has health
     mock_coordinator.data = {"hw": {"health": {}}}
     assert sensor.available is True
-
-    # 8. Direct test of _is_throttling_available branches
-    class NonMappingGetter:
-        def get(self, k: str, d: Any = None) -> Any:
-            return {} if k == "health" else d
-
-    class FakeData:
-        def get(self, k: str, d: Any = None) -> Any:
-            return NonMappingGetter() if k == "hw" else d
-
-    assert _is_throttling_available(FakeData()) is False
-
-    with patch("custom_components.pikvm.binary_sensor.get_nested_value") as mock_gnv:
-        mock_gnv.side_effect = lambda d, path, default=None: (
-            {"other": 1} if path == ["hw", "health"] else {"not_health": 1}
-        )
-        assert _is_throttling_available({}) is False
 
 
 def test_binary_sensor_msd_defensive_telemetry(mock_coordinator: MagicMock) -> None:
