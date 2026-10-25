@@ -102,8 +102,7 @@ async def test_sensor_async_setup_entry_standard_sensors(hass, mock_coordinator)
     assert ent_reg.async_get(non_sensor_ent.entity_id) is not None
 
     assert mock_add_entities.call_count == 1
-    entities, update_before_add = mock_add_entities.call_args[0]
-    assert update_before_add is True
+    entities = mock_add_entities.call_args[0][0]
     assert len(entities) == 5
 
     keys = [e.entity_description.key for e in entities]
@@ -177,7 +176,7 @@ async def test_sensor_async_setup_entry_with_extras(hass, mock_coordinator):
     mock_add_entities = MagicMock()
     await async_setup_entry(hass, entry, mock_add_entities)
 
-    entities, _ = mock_add_entities.call_args[0]
+    entities = mock_add_entities.call_args[0][0]
     assert len(entities) == 5
 
 
@@ -212,7 +211,7 @@ async def test_sensor_device_name_formatting(
     mock_add_entities = MagicMock()
     await async_setup_entry(hass, entry, mock_add_entities)
 
-    entities, _ = mock_add_entities.call_args[0]
+    entities = mock_add_entities.call_args[0][0]
     assert len(entities) == 5
 
 
@@ -342,5 +341,5 @@ async def test_sensor_async_setup_entry_with_runtime_data(hass, mock_coordinator
     await async_setup_entry(hass, entry, mock_add_entities)
 
     assert mock_add_entities.call_count == 1
-    entities, _ = mock_add_entities.call_args[0]
+    entities = mock_add_entities.call_args[0][0]
     assert len(entities) == 5

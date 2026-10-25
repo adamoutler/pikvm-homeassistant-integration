@@ -251,10 +251,19 @@ class PiKVMDataUpdateCoordinator(DataUpdateCoordinator[PiKVMDeviceInfo]):
                 translation_placeholders={"host": self.clean_host},
             ) from err
         except (PiKVMDeviceError, PiKVMError) as err:
-            _LOGGER.debug("Error communicating with PiKVM API at %s: %s", self.url, err)
+            clean_err = (
+                " ".join(str(err).split()).split("<html")[0].rstrip(": ").strip()
+                or str(err)
+            )
+            _LOGGER.debug(
+                "Error communicating with PiKVM API at %s: %s", self.url, clean_err
+            )
             raise UpdateFailed(
-                f"Error communicating with PiKVM at {self.clean_host}: {err}",
+                f"Error communicating with PiKVM at {self.clean_host}: {clean_err}",
                 translation_domain=DOMAIN,
                 translation_key="communication_error",
-                translation_placeholders={"host": self.clean_host, "error": str(err)},
+                translation_placeholders={
+                    "host": self.clean_host,
+                    "error": clean_err,
+                },
             ) from err

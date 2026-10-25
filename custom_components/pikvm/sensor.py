@@ -290,5 +290,5 @@ async def async_setup_entry(
                 )
                 ent_reg.async_remove(ent_entry.entity_id)
 
-    async_add_entities(sensors, True)
+    async_add_entities(sensors)
     _LOGGER.debug("PiKVM sensors added to Home Assistant")

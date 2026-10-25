@@ -124,6 +124,13 @@ async def test_coordinator_authentication_error(hass):
             {"host": "pikvm.local", "error": "Internal error in KVMD"},
         ),
         (
+            PiKVMDeviceError,
+            "HTTP 502: <html>\n<head><title>502 Bad Gateway</title></head>\n</html>",
+            "Error communicating with PiKVM at pikvm.local: HTTP 502",
+            "communication_error",
+            {"host": "pikvm.local", "error": "HTTP 502"},
+        ),
+        (
             PiKVMError,
             "General error",
             "Error communicating with PiKVM at pikvm.local",

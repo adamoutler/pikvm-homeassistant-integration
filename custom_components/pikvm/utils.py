@@ -108,10 +108,8 @@ def find_existing_entry(
         entry_serial = normalize_serial(entry.data.get("serial")) or normalize_serial(
             getattr(entry, "unique_id", None)
         )
-        _LOGGER.debug("Checking existing %s against %s", entry_serial, norm_serial)
         if entry_serial == norm_serial:
             return entry
-    _LOGGER.debug("No existing entry found for %s, configuring", norm_serial)
     return None
 
 
