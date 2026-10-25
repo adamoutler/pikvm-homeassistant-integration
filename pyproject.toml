@@ -1,6 +1,6 @@
 [project]
 name = "pikvm-homeassistant-integration"
-version = "1.2.0"
+version = "1.2.1"
 description = "PiKVM Home Assistant Custom Integration"
 readme = "README.md"
 requires-python = ">=3.12"
