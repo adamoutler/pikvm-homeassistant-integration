@@ -14,6 +14,7 @@ from homeassistant.core import HomeAssistant
 from .const import (
     CONF_HOST,
     CONF_PASSWORD,
+    CONF_SERIAL,
     CONF_TOTP,
     CONF_USERNAME,
     DEFAULT_PASSWORD,
@@ -33,6 +34,14 @@ def normalize_url(input_url: str) -> str:
 
 
 format_url = normalize_url
+
+
+def extract_raw_dict(data: Any) -> dict[str, Any]:
+    """Extract raw dictionary payload from a PiKVMDeviceInfo or mapping."""
+    raw = getattr(data, "raw", None)
+    if isinstance(raw, dict):
+        return raw
+    return data if isinstance(data, dict) else {}
 
 
 def create_data_schema(user_input: Mapping[str, Any] | None = None) -> vol.Schema:
@@ -71,13 +80,13 @@ def update_existing_entry(
     updated_data = dict(existing_entry.data)
     updated_data.update(user_input)
     raw_serial = (
-        updated_data.get("serial")
-        or existing_entry.data.get("serial")
+        updated_data.get(CONF_SERIAL)
+        or existing_entry.data.get(CONF_SERIAL)
         or getattr(existing_entry, "unique_id", None)
     )
     norm_serial = normalize_serial(raw_serial)
-    updated_data["serial"] = (
-        norm_serial if norm_serial is not None else existing_entry.data.get("serial")
+    updated_data[CONF_SERIAL] = (
+        norm_serial if norm_serial is not None else existing_entry.data.get(CONF_SERIAL)
     )
     if hass is not None:
         unique_id_arg = (
@@ -105,7 +114,7 @@ def find_existing_entry(
         flow_handler._async_current_entries()
     )
     for entry in existing_entries:
-        entry_serial = normalize_serial(entry.data.get("serial")) or normalize_serial(
+        entry_serial = normalize_serial(entry.data.get(CONF_SERIAL)) or normalize_serial(
             getattr(entry, "unique_id", None)
         )
         if entry_serial == norm_serial:
@@ -122,7 +131,7 @@ def get_unique_id_base(
     entry_data = getattr(config_entry, "data", None)
     for candidate in (
         get_nested_value(coord_data, ["hw", "platform", "serial"]),
-        entry_data.get("serial") if isinstance(entry_data, Mapping) else None,
+        entry_data.get(CONF_SERIAL) if isinstance(entry_data, Mapping) else None,
         getattr(config_entry, "unique_id", None),
     ):
         if (
@@ -174,3 +183,4 @@ def bytes_to_mb(bytes_value: Any) -> float | None:
         return val / (1024 * 1024)
     except (ValueError, TypeError, OverflowError):
         return None
+

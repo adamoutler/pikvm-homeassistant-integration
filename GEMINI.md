@@ -8,15 +8,16 @@ Quality Scale Target: Platinum
 
 ## Architecture & Module Structure
 - `custom_components/pikvm/__init__.py`: Component lifecycle, setup, unload, remove, device registry reconciliation, title disambiguation, and runtime data assignment (`entry.runtime_data`).
+- `custom_components/pikvm/migration.py`: Seamless legacy domain (`pikvm_ha` -> `pikvm`) migration and duplicate config entry deduplication by hardware serial.
 - `custom_components/pikvm/coordinator.py`: `PiKVMDataUpdateCoordinator` managing async polling via `pikvm-aio`, translating auth/connection errors (`ConfigEntryAuthFailed`, `UpdateFailed`), and dispatching self-healing Repairs issues (`issue_registry`) for undervoltage and throttling.
 - `custom_components/pikvm/config_flow.py`: User configuration, Zeroconf discovery (IPv4 filtered), Reauth flow (with TOTP clearing support), and Reconfigure flow (with serial mismatch guard).
 - `custom_components/pikvm/options_flow.py`: Runtime configuration options (`scan_interval`: 5 to 300 seconds).
 - `custom_components/pikvm/cert_handler.py`: Certificate acquisition and validation using `pikvm-aio`.
-- `custom_components/pikvm/entity.py`: Base entity class linking entities to coordinator telemetry and DeviceInfo.
+- `custom_components/pikvm/entity.py`: Base entity class, `PiKVMEntityDescriptionMixin`, and shared stale entity cleanup linking entities to coordinator telemetry and DeviceInfo.
 - `custom_components/pikvm/sensor.py`: Numeric sensor platform with Long-Term Statistics (LTS) support (CPU temp, CPU util, memory util, fan speed, MSD storage).
 - `custom_components/pikvm/binary_sensor.py`: Binary sensor platform for state flags (throttling, MSD enabled/drive, extra services) with automated legacy sensor migration cleanup.
 - `custom_components/pikvm/diagnostics.py`: Redacted diagnostic data dumping for config entries and device registry entries.
-- `custom_components/pikvm/utils.py`: Helpers for URL normalization, schema generation, translations, and safe nested data retrieval.
+- `custom_components/pikvm/utils.py`: Helpers for URL normalization, schema generation, raw payload extraction, and safe nested data retrieval.
 - `custom_components/pikvm/strings.json` & `translations/en.json`: UI and issue translations.
 - `custom_components/pikvm/icons.json`: Decoupled MDI icon definitions for entities.
 
@@ -31,5 +32,6 @@ Quality Scale Target: Platinum
 - **Zero-Tolerance Quality:** Strict type hints, safe casting, and 100% test coverage target.
 
 ## Testing & Quality Standard
-- Minimum test coverage: **80%** enforced in CI (`pytest --cov=custom_components.pikvm --cov-fail-under=80`). Target: **100%**.
+- Test coverage: **100%** enforced in CI (`pytest --cov=custom_components.pikvm --cov-fail-under=100`).
 - Public verification executed via GitHub Actions (`tests.yaml`, `hassfest.yaml`, `validate.yaml`).
+

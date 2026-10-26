@@ -10,6 +10,7 @@ from homeassistant.helpers import device_registry as dr
 
 from . import PiKVMConfigEntry
 from .const import CONF_CERTIFICATE, CONF_PASSWORD, CONF_TOTP, DOMAIN
+from .utils import extract_raw_dict
 
 TO_REDACT = {
     CONF_PASSWORD,
@@ -50,12 +51,11 @@ async def async_get_config_entry_diagnostics(
         or hass.data.get(DOMAIN, {}).get(config_entry.entry_id)
     )
 
-    coordinator_data: dict[str, Any] | None = None
-    if coordinator and coordinator.data is not None:
-        if hasattr(coordinator.data, "raw"):
-            coordinator_data = coordinator.data.raw
-        elif isinstance(coordinator.data, dict):
-            coordinator_data = coordinator.data
+    coordinator_data = (
+        extract_raw_dict(coordinator.data) or None
+        if coordinator and coordinator.data is not None
+        else None
+    )
 
     return {
         "config_entry": async_redact_data(config_entry.as_dict(), TO_REDACT),

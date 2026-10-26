@@ -20,7 +20,11 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from . import PiKVMConfigEntry
 from .const import DOMAIN, LEGACY_DOMAIN
 from .coordinator import PiKVMDataUpdateCoordinator
-from .entity import PiKVMEntity
+from .entity import (
+    PiKVMEntity,
+    PiKVMEntityDescriptionMixin,
+    async_cleanup_stale_entities,
+)
 from .utils import get_nested_value, get_unique_id_base
 
 _LOGGER = logging.getLogger(__name__)
@@ -29,12 +33,12 @@ PARALLEL_UPDATES = 0
 
 
 @dataclass(frozen=True, kw_only=True)
-class PiKVMBinarySensorEntityDescription(BinarySensorEntityDescription):
+class PiKVMBinarySensorEntityDescription(
+    BinarySensorEntityDescription, PiKVMEntityDescriptionMixin
+):
     """Describes a PiKVM binary sensor entity."""
 
     is_on_fn: Callable[[Any], bool | None]
-    attributes_fn: Callable[[Any], dict[str, Any]] | None = None
-    available_fn: Callable[[Any], bool] | None = None
 
 
 def _is_throttling_on(data: Any) -> bool:
@@ -130,22 +134,13 @@ async def async_setup_entry(
                 )
             )
 
-    ent_reg = er.async_get(hass)
-    valid_uids = {e.unique_id for e in entities}
-    if not unique_id_base.endswith("_unknown"):
-        for ent_entry in er.async_entries_for_config_entry(
-            ent_reg, config_entry.entry_id
-        ):
-            if (
-                ent_entry.domain == "binary_sensor"
-                and ent_entry.unique_id not in valid_uids
-            ):
-                _LOGGER.info(
-                    "Removing stale legacy binary_sensor entity %s (unique_id: %s)",
-                    ent_entry.entity_id,
-                    ent_entry.unique_id,
-                )
-                ent_reg.async_remove(ent_entry.entity_id)
+    async_cleanup_stale_entities(
+        hass,
+        config_entry,
+        "binary_sensor",
+        unique_id_base,
+        {e.unique_id for e in entities},
+    )
 
     async_add_entities(entities)
 
@@ -229,3 +224,4 @@ class PiKVMExtraBinarySensor(PiKVMBinarySensor):
                 ),
             ),
         )
+

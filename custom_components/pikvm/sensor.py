@@ -21,14 +21,17 @@ from homeassistant.const import (
     UnitOfTemperature,
 )
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.typing import StateType
 
 from . import PiKVMConfigEntry
 from .const import DOMAIN
 from .coordinator import PiKVMDataUpdateCoordinator
-from .entity import PiKVMEntity
+from .entity import (
+    PiKVMEntity,
+    PiKVMEntityDescriptionMixin,
+    async_cleanup_stale_entities,
+)
 from .utils import bytes_to_mb, get_nested_value, get_unique_id_base
 
 _LOGGER = logging.getLogger(__name__)
@@ -37,12 +40,10 @@ PARALLEL_UPDATES = 0
 
 
 @dataclass(frozen=True, kw_only=True)
-class PiKVMSensorEntityDescription(SensorEntityDescription):
+class PiKVMSensorEntityDescription(SensorEntityDescription, PiKVMEntityDescriptionMixin):
     """Describes a PiKVM sensor entity."""
 
     value_fn: Callable[[Any], StateType]
-    attributes_fn: Callable[[Any], dict[str, Any]] | None = None
-    available_fn: Callable[[Any], bool] | None = None
 
 
 def _get_finite_float(data: Any, path: list[str]) -> float | None:
@@ -80,41 +81,48 @@ def _get_memory_attributes(data: Any) -> dict[str, Any]:
     return attrs
 
 
+def _get_fan_dict(data: Any) -> Mapping[str, Any] | None:
+    """Resolve fan telemetry mapping across V3/V4 performance and legacy paths."""
+    for path in (["hw", "performance", "fan"], ["hw", "fan"]):
+        fan_data = get_nested_value(data, path)
+        if isinstance(fan_data, Mapping):
+            return fan_data
+    return None
+
+
 def _get_fan_speed(data: Any) -> int | None:
-    val = get_nested_value(data, ["hw", "performance", "fan", "speed"])
-    if val is None:
-        val = get_nested_value(data, ["hw", "fan", "speed"])
+    fan_data = _get_fan_dict(data)
+    val = fan_data.get("speed") if fan_data is not None else None
     if val is None:
         return None
     try:
         num_int = int(val)
-        num_float = float(num_int)
-        if not math.isfinite(num_float) or not (0 <= num_float <= 100_000):
-            return None
-        return num_int
+        return num_int if 0 <= num_int <= 100_000 else None
     except (ValueError, TypeError, OverflowError):
         return None
 
 
 def _get_fan_attributes(data: Any) -> dict[str, Any]:
-    fan_data = get_nested_value(data, ["hw", "performance", "fan"])
-    if not isinstance(fan_data, Mapping):
-        fan_data = get_nested_value(data, ["hw", "fan"])
-    if isinstance(fan_data, Mapping):
-        return dict(fan_data)
-    return {}
+    fan_data = _get_fan_dict(data)
+    return dict(fan_data) if fan_data is not None else {}
 
 
-def _get_msd_storage(data: Any) -> float | None:
+def _get_msd_storage_raw(data: Any) -> tuple[Mapping[str, Any] | None, Any, Any]:
+    """Extract MSD storage mapping and raw total/available byte values."""
     storage = get_nested_value(data, ["msd", "storage"])
     if not isinstance(storage, Mapping):
-        return None
+        return None, None, None
     total_raw = storage.get("total")
     avail_raw = (
         storage.get("available")
         if storage.get("available") is not None
         else storage.get("free")
     )
+    return storage, total_raw, avail_raw
+
+
+def _get_msd_storage(data: Any) -> float | None:
+    _, total_raw, avail_raw = _get_msd_storage_raw(data)
     if total_raw is None or avail_raw is None:
         return None
     try:
@@ -124,44 +132,28 @@ def _get_msd_storage(data: Any) -> float | None:
             return None
         used = max(0.0, total - available)
         return round(float((used / total) * 100), 2)
-    except (ValueError, TypeError, OverflowError, ZeroDivisionError):
+    except (ValueError, TypeError, OverflowError):
         return None
 
 
 def _get_msd_storage_attributes(data: Any) -> dict[str, Any]:
     attrs: dict[str, Any] = {}
-    storage_data = get_nested_value(data, ["msd", "storage"])
-    if not isinstance(storage_data, Mapping):
+    storage_data, total_raw, avail_raw = _get_msd_storage_raw(data)
+    if storage_data is None:
         return attrs
 
-    total_raw = storage_data.get("total")
-    avail_raw = (
-        storage_data.get("available")
-        if storage_data.get("available") is not None
-        else storage_data.get("free")
-    )
+    total_mb = bytes_to_mb(total_raw)
+    if total_mb is not None:
+        attrs["total_size_mb"] = round(total_mb, 2)
 
-    if total_raw is not None:
-        total_mb = bytes_to_mb(total_raw)
-        if total_mb is not None:
-            attrs["total_size_mb"] = round(total_mb, 2)
+    free_mb = bytes_to_mb(avail_raw)
+    if free_mb is not None:
+        attrs["free_size_mb"] = round(free_mb, 2)
 
-    if avail_raw is not None:
-        free_mb = bytes_to_mb(avail_raw)
-        if free_mb is not None:
-            attrs["free_size_mb"] = round(free_mb, 2)
-
-    if total_raw is not None and avail_raw is not None:
-        try:
-            total_num = float(total_raw)
-            avail_num = float(avail_raw)
-            if math.isfinite(total_num) and math.isfinite(avail_num):
-                used = max(0.0, total_num - avail_num)
-                used_mb = bytes_to_mb(used)
-                if used_mb is not None:
-                    attrs["used_size_mb"] = round(used_mb, 2)
-        except (ValueError, TypeError, OverflowError, ZeroDivisionError):
-            pass
+    if total_mb is not None and free_mb is not None:
+        used_mb = bytes_to_mb(max(0.0, float(total_raw) - float(avail_raw)))
+        if used_mb is not None:
+            attrs["used_size_mb"] = round(used_mb, 2)
 
     val = _get_msd_storage(data)
     if val is not None:
@@ -276,19 +268,10 @@ async def async_setup_entry(
         for description in SENSOR_DESCRIPTIONS
     ]
 
-    ent_reg = er.async_get(hass)
-    valid_uids = {s.unique_id for s in sensors}
-    if not unique_id_base.endswith("_unknown"):
-        for ent_entry in er.async_entries_for_config_entry(
-            ent_reg, config_entry.entry_id
-        ):
-            if ent_entry.domain == "sensor" and ent_entry.unique_id not in valid_uids:
-                _LOGGER.info(
-                    "Removing stale legacy sensor entity %s (unique_id: %s)",
-                    ent_entry.entity_id,
-                    ent_entry.unique_id,
-                )
-                ent_reg.async_remove(ent_entry.entity_id)
+    async_cleanup_stale_entities(
+        hass, config_entry, "sensor", unique_id_base, {s.unique_id for s in sensors}
+    )
 
     async_add_entities(sensors)
     _LOGGER.debug("PiKVM sensors added to Home Assistant")
+

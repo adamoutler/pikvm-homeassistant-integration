@@ -17,6 +17,8 @@ from pikvm_aio import (
     fetch_remote_cert,
 )
 
+from .const import DOMAIN  # noqa: F401
+
 _LOGGER = logging.getLogger(__name__)
 
 _DEFAULT_NO_VERIFY_SSL_CONTEXT: ssl.SSLContext | None
@@ -65,7 +67,12 @@ async def is_pikvm_device(
     )
     try:
         device = await client.get_info()
-        serial = str(getattr(device, "serial", None) or (device.get("hw", {}).get("platform", {}).get("serial") if hasattr(device, "get") else "") or "unknown").lower()
+        nested_serial = (
+            device.get("hw", {}).get("platform", {}).get("serial")
+            if hasattr(device, "get")
+            else ""
+        )
+        serial = str(getattr(device, "serial", None) or nested_serial or "unknown").lower()
         model = str(getattr(device, "model", None) or "PiKVM")
         name = str(getattr(device, "name", None) or "PiKVM")
         return PiKVMResponse(True, model, serial, name, None)
@@ -73,7 +80,7 @@ async def is_pikvm_device(
         return PiKVMResponse(False, None, None, None, "Exception_HTTP403")
     except PiKVMTimeoutError:
         return PiKVMResponse(False, None, None, None, "timeout")
-    except (PiKVMConnectionError, PiKVMDeviceError):
+    except (PiKVMConnectionError, PiKVMDeviceError, Exception):  # noqa: BLE001
         return PiKVMResponse(False, None, None, None, "cannot_connect")
-    except Exception:  # noqa: BLE001
-        return PiKVMResponse(False, None, None, None, "cannot_connect")
+
+

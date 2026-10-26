@@ -34,12 +34,10 @@ from pikvm_aio import (
 )
 
 from .cert_handler import _DEFAULT_NO_VERIFY_SSL_CONTEXT
-from .const import DOMAIN
-from .utils import get_nested_value
+from .const import DEFAULT_SCAN_INTERVAL, DOMAIN
+from .utils import extract_raw_dict, get_nested_value
 
 _LOGGER = logging.getLogger(__name__)
-
-DEFAULT_SCAN_INTERVAL = 30
 
 
 class PiKVMDataUpdateCoordinator(DataUpdateCoordinator[PiKVMDeviceInfo]):
@@ -135,16 +133,37 @@ class PiKVMDataUpdateCoordinator(DataUpdateCoordinator[PiKVMDeviceInfo]):
 
         return raw_name
 
+    def _sync_repair_issue(
+        self,
+        issue_id: str,
+        is_active: bool,
+        severity: IssueSeverity,
+        translation_key: str,
+        learn_more_url: str,
+    ) -> None:
+        """Create or delete a Home Assistant Repairs issue."""
+        if is_active:
+            async_create_issue(
+                self.hass,
+                DOMAIN,
+                issue_id,
+                is_fixable=False,
+                is_persistent=False,
+                severity=severity,
+                translation_key=translation_key,
+                translation_placeholders={"device_name": self.device_name},
+                learn_more_url=learn_more_url,
+            )
+        else:
+            async_delete_issue(self.hass, DOMAIN, issue_id)
+
     def _async_check_hardware_health(self, data: Any) -> None:
         """Monitor hardware undervoltage and throttling issues."""
         entry_id = self.config_entry.entry_id if self.config_entry else self.clean_host
         if not entry_id:
             return
 
-        raw_data = getattr(data, "raw", None)
-        if not isinstance(raw_data, dict):
-            raw_data = data if isinstance(data, dict) else {}
-
+        raw_data = extract_raw_dict(data)
         throttling = get_nested_value(raw_data, ["hw", "health", "throttling"], {})
         if not isinstance(throttling, dict):
             throttling = {}
@@ -177,39 +196,20 @@ class PiKVMDataUpdateCoordinator(DataUpdateCoordinator[PiKVMDeviceInfo]):
         )
         has_throttling = is_throttled_now or is_throttled_past
 
-        # Undervoltage Issue Management
-        uv_issue_id = f"undervoltage_{entry_id}"
-        if has_under_voltage:
-            async_create_issue(
-                self.hass,
-                DOMAIN,
-                uv_issue_id,
-                is_fixable=False,
-                is_persistent=False,
-                severity=IssueSeverity.CRITICAL if is_under_voltage_now else IssueSeverity.WARNING,
-                translation_key="undervoltage",
-                translation_placeholders={"device_name": self.device_name},
-                learn_more_url="https://docs.pikvm.org/power/",
-            )
-        else:
-            async_delete_issue(self.hass, DOMAIN, uv_issue_id)
-
-        # Throttling Issue Management
-        th_issue_id = f"throttling_{entry_id}"
-        if has_throttling:
-            async_create_issue(
-                self.hass,
-                DOMAIN,
-                th_issue_id,
-                is_fixable=False,
-                is_persistent=False,
-                severity=IssueSeverity.WARNING,
-                translation_key="throttling",
-                translation_placeholders={"device_name": self.device_name},
-                learn_more_url="https://docs.pikvm.org/",
-            )
-        else:
-            async_delete_issue(self.hass, DOMAIN, th_issue_id)
+        self._sync_repair_issue(
+            f"undervoltage_{entry_id}",
+            has_under_voltage,
+            IssueSeverity.CRITICAL if is_under_voltage_now else IssueSeverity.WARNING,
+            "undervoltage",
+            "https://docs.pikvm.org/power/",
+        )
+        self._sync_repair_issue(
+            f"throttling_{entry_id}",
+            has_throttling,
+            IssueSeverity.WARNING,
+            "throttling",
+            "https://docs.pikvm.org/",
+        )
 
     async def _async_update_data(self) -> PiKVMDeviceInfo:
         """Fetch data from PiKVM API."""

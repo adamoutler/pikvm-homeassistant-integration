@@ -156,17 +156,21 @@ async def perform_device_setup(
     return None, errors
 
 
+def _extract_clean_host(raw_host: str) -> str:
+    """Safely extract clean host without port or scheme."""
+    try:
+        return parse_host_port(raw_host)[0]
+    except Exception:  # noqa: BLE001
+        return raw_host
+
+
 def _is_entry_host_in_advertised_ips(
     entry: config_entries.ConfigEntry | None, advertised_ipv4s: set[str]
 ) -> bool:
     """Return True if entry's configured host is already among the device's advertised IPv4s."""
     if entry is None or len(advertised_ipv4s) <= 1:
         return False
-    raw_existing = str(entry.data.get(CONF_HOST, "")).strip()
-    try:
-        clean_existing = parse_host_port(raw_existing)[0]
-    except Exception:  # noqa: BLE001
-        clean_existing = raw_existing
+    clean_existing = _extract_clean_host(str(entry.data.get(CONF_HOST, "")).strip())
     return bool(clean_existing and clean_existing in advertised_ipv4s)
 
 
@@ -186,7 +190,7 @@ class PiKVMConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         self, discovery_info: ZeroconfServiceInfo
     ) -> config_entries.ConfigFlowResult:
         """Handle the ZeroConf discovery step."""
-        raw_serial = discovery_info.properties.get("serial")
+        raw_serial = discovery_info.properties.get(CONF_SERIAL)
         if isinstance(raw_serial, bytes):
             raw_serial = raw_serial.decode("utf-8", errors="ignore")
         serial = normalize_serial(str(raw_serial) if raw_serial is not None else None)
@@ -197,9 +201,7 @@ class PiKVMConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             _LOGGER.debug("Discovered device with ZeroConf but missing serial or host")
             return self.async_abort(reason="missing_serial_or_host")
 
-        if ":" in host or isinstance(
-            getattr(discovery_info, "ip_address", None), IPv6Address
-        ):
+        if ":" in host or isinstance(ip_addr, IPv6Address):
             _LOGGER.debug("Discovered device with ZeroConf but IPv6 address: %s", host)
             return self.async_abort(reason="ipv6_address")
 
@@ -214,7 +216,7 @@ class PiKVMConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             "Discovered device with ZeroConf: host=%s, serial=%s, model=%s",
             host,
             serial,
-            discovery_info.properties.get("model"),
+            discovery_info.properties.get(CONF_MODEL),
         )
         if self.hass is not None:
             await async_migrate_legacy_domain(self.hass)
@@ -241,7 +243,7 @@ class PiKVMConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 "Device with serial %s already configured, updating existing entry",
                 serial,
             )
-            fallback_updates: dict[str, Any] = {"serial": serial}
+            fallback_updates: dict[str, Any] = {CONF_SERIAL: serial}
             if not keep_existing_host:
                 fallback_updates[CONF_HOST] = host
             update_existing_entry(
@@ -256,7 +258,7 @@ class PiKVMConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             CONF_USERNAME: DEFAULT_USERNAME,
             CONF_PASSWORD: DEFAULT_PASSWORD,
             CONF_TOTP: "",
-            "serial": serial,
+            CONF_SERIAL: serial,
         }
         return await self._show_zeroconf_menu()
 
@@ -402,10 +404,7 @@ class PiKVMConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             default_username = reauth_entry.data.get(CONF_USERNAME, DEFAULT_USERNAME)
             default_password = reauth_entry.data.get(CONF_PASSWORD, DEFAULT_PASSWORD)
             default_totp = reauth_entry.data.get(CONF_TOTP, "")
-            try:
-                clean_host = parse_host_port(reauth_entry.data.get(CONF_HOST, ""))[0]
-            except Exception:  # noqa: BLE001
-                clean_host = reauth_entry.data.get(CONF_HOST, "")
+            clean_host = _extract_clean_host(reauth_entry.data.get(CONF_HOST, ""))
 
         reauth_schema = vol.Schema(
             {
@@ -499,7 +498,7 @@ class PiKVMConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 CONF_PASSWORD, DEFAULT_PASSWORD
             )
             default_totp = reconfigure_entry.data.get(CONF_TOTP, "")
-            clean_host = parse_host_port(default_host)[0]
+            clean_host = _extract_clean_host(default_host)
 
         reconfigure_schema = vol.Schema(
             {
