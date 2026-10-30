@@ -12,10 +12,18 @@ import homeassistant.helpers.config_validation as cv
 import pyotp
 import voluptuous as vol
 from homeassistant import config_entries, data_entry_flow
-from homeassistant.components.zeroconf import ZeroconfServiceInfo
 from homeassistant.const import CONF_PORT
 from homeassistant.core import HomeAssistant, callback
 from pikvm_aio import parse_host_port
+
+try:
+    from homeassistant.helpers.service_info.zeroconf import (  # type: ignore[import-not-found,unused-ignore]
+        ZeroconfServiceInfo,
+    )
+except ImportError:  # pragma: no cover
+    from homeassistant.components.zeroconf import (  # type: ignore[attr-defined,no-redef,unused-ignore]
+        ZeroconfServiceInfo,
+    )
 
 from .cert_handler import PiKVMResponse, fetch_serialized_cert, is_pikvm_device
 from .const import (
