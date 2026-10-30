@@ -1509,6 +1509,125 @@ async def test_zeroconf_dual_nic_preserves_existing_entry_host(hass):
     assert legacy_entry.unique_id == "sn_dual_fallback"
 
 
+@pytest.mark.asyncio
+async def test_reconfigure_flow_complete_lifecycle(hass, pikvm_cert):
+    """Test reconfigure flow init, port handling, errors, mismatch, and success."""
+    from homeassistant.const import CONF_PORT
+
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        title="PiKVM",
+        unique_id="sn_reconf_123",
+        data={
+            CONF_HOST: "https://192.168.1.50",
+            CONF_USERNAME: "admin",
+            CONF_PASSWORD: "old_password",
+            CONF_SERIAL: "sn_reconf_123",
+            CONF_CERTIFICATE: pikvm_cert,
+            CONF_TOTP: "JBSWY3DPEHPK3PXP",
+        },
+    )
+    entry.add_to_hass(hass)
+
+    flow = PiKVMConfigFlow()
+    flow.hass = hass
+    flow.context = {
+        "source": config_entries.SOURCE_RECONFIGURE,
+        "entry_id": entry.entry_id,
+    }
+
+    # 1. Initial form
+    form_res = await flow.async_step_reconfigure()
+    assert form_res["type"] is FlowResultType.FORM
+    assert form_res["step_id"] == "reconfigure_confirm"
+
+    # 2. Invalid TOTP
+    res_totp = await flow.async_step_reconfigure_confirm(
+        {
+            CONF_HOST: "https://192.168.1.51",
+            CONF_USERNAME: "admin",
+            CONF_PASSWORD: "new_password",
+            CONF_TOTP: "INVALID_TOTP_!",
+        }
+    )
+    assert res_totp["errors"] == {"base": "invalid_totp"}
+
+    # 3. Cannot fetch cert
+    with patch(
+        "custom_components.pikvm.config_flow.fetch_serialized_cert",
+        new=AsyncMock(return_value=None),
+    ):
+        res_cert = await flow.async_step_reconfigure_confirm(
+            {
+                CONF_HOST: "https://192.168.1.51",
+                CONF_USERNAME: "admin",
+                CONF_PASSWORD: "new_password",
+                CONF_TOTP: "",
+            }
+        )
+        assert res_cert["errors"] == {"base": "cannot_fetch_cert"}
+
+    # 4. Cannot connect (response.success=False, error=None)
+    with (
+        patch(
+            "custom_components.pikvm.config_flow.fetch_serialized_cert",
+            new=AsyncMock(return_value=pikvm_cert),
+        ),
+        patch(
+            "custom_components.pikvm.config_flow.is_pikvm_device",
+            new=AsyncMock(return_value=PiKVMResponse(False, None, None, None, None)),
+        ),
+    ):
+        res_conn = await flow.async_step_reconfigure_confirm(
+            {
+                CONF_HOST: "https://192.168.1.51:8443",
+                CONF_PORT: 8443,
+                CONF_USERNAME: "admin",
+                CONF_PASSWORD: "new_password",
+                CONF_TOTP: "",
+            }
+        )
+        assert res_conn["errors"] == {"base": "cannot_connect"}
+
+    # 5. Success with port append and model fallback to reconfigure_entry.data
+    with (
+        patch(
+            "custom_components.pikvm.config_flow.fetch_serialized_cert",
+            new=AsyncMock(return_value=pikvm_cert),
+        ),
+        patch(
+            "custom_components.pikvm.config_flow.is_pikvm_device",
+            new=AsyncMock(
+                return_value=PiKVMResponse(True, None, "sn_reconf_123", "PiKVM", None)
+            ),
+        ),
+        patch.object(
+            hass.config_entries, "async_reload", new=AsyncMock(return_value=True)
+        ),
+    ):
+        res_ok = await flow.async_step_reconfigure_confirm(
+            {
+                CONF_HOST: "https://192.168.1.51/",
+                CONF_PORT: 8443,
+                CONF_USERNAME: "admin",
+                CONF_PASSWORD: "new_password",
+                CONF_TOTP: "   ",
+            }
+        )
+        assert res_ok["type"] is FlowResultType.ABORT
+        assert res_ok["reason"] == "reconfigure_successful"
+        assert entry.data[CONF_HOST] == "https://192.168.1.51:8443"
+        assert entry.data[CONF_TOTP] == ""
+
+    # 6. _get_reconfigure_entry returns None branch
+    flow_no_entry = PiKVMConfigFlow()
+    flow_no_entry.hass = hass
+    with patch.object(flow_no_entry, "_get_reconfigure_entry", return_value=None):
+        res_none = await flow_no_entry.async_step_reconfigure_confirm()
+        assert res_none["type"] is FlowResultType.FORM
+
+
+
 
 
 

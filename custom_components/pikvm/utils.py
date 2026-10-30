@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import logging
 import math
 from collections.abc import Mapping, Sequence
 from typing import Any
@@ -10,6 +9,7 @@ from typing import Any
 import voluptuous as vol
 from homeassistant import config_entries
 from homeassistant.core import HomeAssistant
+from pikvm_aio import PiKVMDeviceInfo, format_url
 
 from .const import (
     CONF_HOST,
@@ -21,19 +21,21 @@ from .const import (
     DEFAULT_USERNAME,
 )
 
-_LOGGER = logging.getLogger(__name__)
 _SENTINEL = object()
 
-
-def normalize_url(input_url: str) -> str:
-    """Ensure the URL is properly formatted."""
-    url = input_url.strip()
-    if not url.startswith(("http://", "https://")):
-        url = f"https://{url}"
-    return url.rstrip("/")
+normalize_url = format_url
 
 
-format_url = normalize_url
+def ensure_device_info(data: Any) -> PiKVMDeviceInfo | None:
+    """Return a PiKVMDeviceInfo instance from a model or dictionary."""
+    if isinstance(data, PiKVMDeviceInfo):
+        return data
+    if isinstance(data, Mapping):
+        try:
+            return PiKVMDeviceInfo.from_dict(dict(data))
+        except Exception:  # noqa: BLE001
+            return None
+    return None
 
 
 def extract_raw_dict(data: Any) -> dict[str, Any]:
@@ -66,9 +68,7 @@ def normalize_serial(serial: Any) -> str | None:
     if not isinstance(serial, str):
         return None
     cleaned = serial.strip().lower()
-    if not cleaned or cleaned in ("none", "unknown"):
-        return None
-    return cleaned
+    return None if not cleaned or cleaned in ("none", "unknown") else cleaned
 
 
 def update_existing_entry(
@@ -77,26 +77,17 @@ def update_existing_entry(
     user_input: Mapping[str, Any],
 ) -> None:
     """Update an existing config entry."""
-    updated_data = dict(existing_entry.data)
-    updated_data.update(user_input)
-    raw_serial = (
+    updated_data = {**existing_entry.data, **user_input}
+    norm_serial = normalize_serial(
         updated_data.get(CONF_SERIAL)
         or existing_entry.data.get(CONF_SERIAL)
         or getattr(existing_entry, "unique_id", None)
     )
-    norm_serial = normalize_serial(raw_serial)
-    updated_data[CONF_SERIAL] = (
-        norm_serial if norm_serial is not None else existing_entry.data.get(CONF_SERIAL)
-    )
+    updated_data[CONF_SERIAL] = norm_serial or existing_entry.data.get(CONF_SERIAL)
     if hass is not None:
-        unique_id_arg = (
-            norm_serial
-            if norm_serial and getattr(existing_entry, "unique_id", None) != norm_serial
-            else None
-        )
-        if unique_id_arg is not None:
+        if norm_serial and getattr(existing_entry, "unique_id", None) != norm_serial:
             hass.config_entries.async_update_entry(
-                existing_entry, data=updated_data, unique_id=unique_id_arg
+                existing_entry, data=updated_data, unique_id=norm_serial
             )
         else:
             hass.config_entries.async_update_entry(existing_entry, data=updated_data)
@@ -106,17 +97,15 @@ def find_existing_entry(
     flow_handler: Any, serial: str | None
 ) -> config_entries.ConfigEntry | None:
     """Find an existing entry with the same serial number."""
-    norm_serial = normalize_serial(serial)
-    if not norm_serial:
+    if not (norm_serial := normalize_serial(serial)):
         return None
-
     existing_entries: list[config_entries.ConfigEntry] = (
         flow_handler._async_current_entries()
     )
     for entry in existing_entries:
-        entry_serial = normalize_serial(entry.data.get(CONF_SERIAL)) or normalize_serial(
-            getattr(entry, "unique_id", None)
-        )
+        entry_serial = normalize_serial(
+            entry.data.get(CONF_SERIAL)
+        ) or normalize_serial(getattr(entry, "unique_id", None))
         if entry_serial == norm_serial:
             return entry
     return None
@@ -150,37 +139,23 @@ def get_nested_value(
     default: Any = None,
 ) -> Any:
     """Safely get a nested value from a dictionary or mapping."""
-    if data is None or keys is None:
+    if data is None or not isinstance(keys, (str, Sequence)):
         return default
-    if isinstance(keys, str):
-        key_list: Sequence[Any] = [keys]
-    elif isinstance(keys, Sequence):
-        key_list = keys
-    else:
-        return default
-
-    for key in key_list:
-        if isinstance(data, Mapping) or hasattr(data, "get"):
-            try:
-                data = data.get(key, _SENTINEL)
-                if data is _SENTINEL:
-                    return default
-            except Exception:  # noqa: BLE001
+    for key in [keys] if isinstance(keys, str) else keys:
+        if not (isinstance(data, Mapping) or hasattr(data, "get")):
+            return default
+        try:
+            if (data := data.get(key, _SENTINEL)) is _SENTINEL:
                 return default
-        else:
+        except Exception:  # noqa: BLE001
             return default
     return data
 
 
 def bytes_to_mb(bytes_value: Any) -> float | None:
     """Convert bytes to megabytes."""
-    if bytes_value is None:
-        return None
     try:
         val = float(bytes_value)
-        if not math.isfinite(val):
-            return None
-        return val / (1024 * 1024)
+        return val / (1024 * 1024) if math.isfinite(val) else None
     except (ValueError, TypeError, OverflowError):
         return None
-

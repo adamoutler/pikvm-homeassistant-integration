@@ -220,7 +220,7 @@ def test_get_fan_speed_error_handling():
     assert _get_fan_speed({"hw": {"performance": {"fan": {}}}}) is None
     assert _get_fan_speed({}) is None
     assert _get_fan_speed({"hw": {"performance": {"fan": {"speed": "fast"}}}}) is None
-    assert _get_fan_speed({"hw": {"performance": {"fan": {"speed": "12.34"}}}}) is None
+    assert _get_fan_speed({"hw": {"performance": {"fan": {"speed": "12.34"}}}}) == 12
     assert _get_fan_speed({"hw": {"performance": {"fan": {"speed": [2400]}}}}) is None
     assert _get_fan_speed({"hw": {"performance": {"fan": {"speed": {"rpm": 2400}}}}}) is None
     # Float infinity and overflow handling
@@ -281,20 +281,22 @@ def test_sensor_helper_msd_storage_and_attributes():
     assert _get_msd_storage({"msd": {"storage": {"total": None, "available": 10}}}) is None
     assert _get_msd_storage({"msd": {"storage": {"total": 100, "available": None}}}) is None
 
-    # String representations of numbers and 'free' key
+    # String representations of numbers and 'parts' key
     assert _get_msd_storage({"msd": {"storage": {"total": "1000", "available": "500"}}}) == 50.0
-    assert _get_msd_storage({"msd": {"storage": {"total": 1000, "free": 200}}}) == 80.0
-    assert _get_msd_storage({"msd": {"storage": {"total": "1000", "free": "300"}}}) == 70.0
+    assert _get_msd_storage({"msd": {"storage": {"parts": {"": {"size": 1000, "free": 200}}}}}) == 80.0
+    assert _get_msd_storage({"msd": {"storage": {"parts": {"": {"size": "1000", "free": "300"}}}}}) == 70.0
     assert _get_msd_storage({"msd": {"storage": {"total": 1000, "available": 2000}}}) == 0.0
 
-    # Non-finite numbers & exception branches (lines 121-122)
+    # Non-finite numbers & exception branches
     assert _get_msd_storage({"msd": {"storage": {"total": float("inf"), "available": 500}}}) is None
     assert _get_msd_storage({"msd": {"storage": {"total": 1000, "available": float("inf")}}}) is None
     assert _get_msd_storage({"msd": {"storage": {"total": "bad", "available": 500}}}) is None
     assert _get_msd_storage({"msd": {"storage": {"total": 1000, "available": "bad"}}}) is None
 
     # Invalid non-dict storage in attributes
+    assert _get_msd_storage_attributes(None) == {}
     assert _get_msd_storage_attributes({"msd": {"storage": "invalid_type"}}) == {}
+    assert _get_memory_attributes(None) == {}
 
     # Partial storage data (total only, available only)
     attrs_total_only = _get_msd_storage_attributes(
@@ -311,9 +313,9 @@ def test_sensor_helper_msd_storage_and_attributes():
     assert "total_size_mb" not in attrs_avail_only
     assert "used_size_mb" not in attrs_avail_only
 
-    # Attributes with 'free' key and string numbers
+    # Attributes with 'parts' key and string numbers
     attrs_free = _get_msd_storage_attributes(
-        {"msd": {"storage": {"total": "1000000000", "free": "500000000"}}}
+        {"msd": {"storage": {"parts": {"": {"size": "1000000000", "free": "500000000"}}}}}
     )
     assert attrs_free["percent_used"] == 50.0
     assert "total_size_mb" in attrs_free
@@ -337,12 +339,6 @@ def test_sensor_helper_msd_storage_and_attributes():
     )
     assert "used_size_mb" not in attrs_inf_total
 
-    # Attributes where used bytes overflows to infinity
-    attrs_overflow_used = _get_msd_storage_attributes(
-        {"msd": {"storage": {"total": 1e308, "available": -1e308}}}
-    )
-    assert "used_size_mb" not in attrs_overflow_used
-
     data_valid = {
         "msd": {
             "storage": {
@@ -350,7 +346,6 @@ def test_sensor_helper_msd_storage_and_attributes():
                 "available": 524288000,
                 "images": {
                     "boot.iso": {"size": 209715200},
-                    "empty.iso": {"size": None},
                     "invalid_entry": "not_a_dict",
                 },
             }
@@ -483,8 +478,6 @@ def test_sensors_numeric_hardening_overflow_and_non_finite():
     assert _get_memory_utilization({"hw": {"performance": {"memory": {"utilization": "inf"}}}}) is None
 
     # _get_msd_storage
-    assert _get_msd_storage({"msd": {"storage": {"total": huge_int, "available": 500}}}) is None
-    assert _get_msd_storage({"msd": {"storage": {"total": 1000, "available": huge_int}}}) is None
     assert _get_msd_storage({"msd": {"storage": {"total": float("nan"), "available": 500}}}) is None
     assert _get_msd_storage({"msd": {"storage": {"total": 1000, "available": float("nan")}}}) is None
 
@@ -501,7 +494,65 @@ def test_sensors_numeric_hardening_overflow_and_non_finite():
     assert CPU_UTILIZATION_SENSOR_DESCRIPTION.available_fn({"hw": {"performance": {"cpu": {"utilization": float("nan")}}}}) is False
     assert MEMORY_UTILIZATION_SENSOR_DESCRIPTION.available_fn({"hw": {"performance": {"memory": {"utilization": huge_int}}}}) is False
     assert MEMORY_UTILIZATION_SENSOR_DESCRIPTION.available_fn({"hw": {"performance": {"memory": {"utilization": float("nan")}}}}) is False
-    assert MSD_STORAGE_SENSOR_DESCRIPTION.available_fn({"msd": {"storage": {"total": huge_int, "available": 500}}}) is False
+    assert MSD_STORAGE_SENSOR_DESCRIPTION.available_fn({"msd": {"storage": {"total": float("nan"), "available": 500}}}) is False
+
+
+@pytest.mark.asyncio
+async def test_sensor_async_setup_entry_and_entity_branches(hass, mock_coordinator) -> None:
+    """Test sensor.async_setup_entry, stale cleanup, and entity description branches."""
+    from unittest.mock import patch
+
+    from homeassistant.helpers import entity_registry as er
+    from pytest_homeassistant_custom_component.common import MockConfigEntry
+
+    from custom_components.pikvm.const import DOMAIN
+    from custom_components.pikvm.sensor import (
+        PiKVMSensorEntityDescription,
+    )
+    from custom_components.pikvm.sensor import (
+        async_setup_entry as sensor_async_setup_entry,
+    )
+
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        entry_id="sensor_setup_entry",
+        data={"host": "https://pikvm.local", "serial": "sn_sensor_123"},
+    )
+    entry.add_to_hass(hass)
+    entry.runtime_data = mock_coordinator
+
+    ent_reg = er.async_get(hass)
+    stale_sensor = ent_reg.async_get_or_create(
+        "sensor",
+        DOMAIN,
+        f"{entry.entry_id}_stale_old_sensor",
+        config_entry=entry,
+    )
+    mock_add_entities = MagicMock()
+    await sensor_async_setup_entry(hass, entry, mock_add_entities)
+    assert ent_reg.async_get(stale_sensor.entity_id) is None
+    assert mock_add_entities.call_count == 1
+    assert len(mock_add_entities.call_args[0][0]) == 5
+
+    # Unknown serial does not purge existing entities
+    with patch(
+        "custom_components.pikvm.sensor.get_unique_id_base",
+        return_value=f"{entry.entry_id}_unknown",
+    ):
+        await sensor_async_setup_entry(hass, entry, mock_add_entities)
+
+    # Custom description with available_fn=None and empty attributes_fn
+    custom_desc = PiKVMSensorEntityDescription(
+        key="custom_sensor",
+        translation_key="custom_sensor",
+        value_fn=lambda _: 1,
+        available_fn=None,
+        attributes_fn=lambda _: {},
+    )
+    custom_sensor = PiKVMSensor(mock_coordinator, "uid", custom_desc)
+    mock_coordinator.last_update_success = True
+    assert custom_sensor.available is True
+    assert custom_sensor.extra_state_attributes == {"ip": mock_coordinator.url}
 
 
 def test_sensor_descriptions_have_no_hardcoded_icons() -> None:

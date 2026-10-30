@@ -15,11 +15,10 @@ from custom_components.pikvm.binary_sensor import (
     BINARY_SENSOR_DESCRIPTIONS,
     PiKVMBinarySensor,
     PiKVMBinarySensorEntityDescription,
-    PiKVMExtraBinarySensor,
-    _async_cleanup_legacy_sensors,
     _get_msd_drive_attributes,
     _get_throttling_attributes,
     _is_throttling_on,
+    _make_extra_description,
     async_setup_entry,
 )
 from custom_components.pikvm.const import DOMAIN
@@ -90,7 +89,7 @@ async def test_binary_sensor_setup_entry(hass, mock_coordinator):
     assert ent_reg.async_get(other_sensor.entity_id) is not None
     assert ent_reg.async_get(valid_bin.entity_id) is not None
 
-    hass.data.setdefault(DOMAIN, {})[entry.entry_id] = mock_coordinator
+    entry.runtime_data = mock_coordinator
 
     mock_add_entities = MagicMock()
     await async_setup_entry(hass, entry, mock_add_entities)
@@ -103,35 +102,19 @@ async def test_binary_sensor_setup_entry(hass, mock_coordinator):
     # 3 standard (throttling, msd_enabled, msd_drive) + 2 extras (vnc, ipmi) = 5
     assert len(entities) == 5
 
-    keys = [getattr(e, "_extra_name", None) or e.entity_description.key for e in entities]
+    keys = [e.entity_description.key for e in entities]
     assert "throttling" in keys
     assert "msd_enabled" in keys
     assert "msd_drive" in keys
-    assert "vnc" in keys
-    assert "ipmi" in keys
-
-
-@pytest.mark.asyncio
-async def test_cleanup_legacy_sensors(hass, mock_coordinator):
-    """Test _async_cleanup_legacy_sensors removes old sensor entries."""
-    ent_reg = er.async_get(hass)
-    unique_id_base = "sn_123"
-
-    old_entity = ent_reg.async_get_or_create(
-        "sensor",
-        DOMAIN,
-        f"{unique_id_base}_throttling",
-        suggested_object_id="pikvm_throttling",
-    )
-    assert ent_reg.async_get(old_entity.entity_id) is not None
-
-    _async_cleanup_legacy_sensors(hass, unique_id_base, mock_coordinator.data)
-    assert ent_reg.async_get(old_entity.entity_id) is None
+    assert "extra_vnc" in keys
+    assert "extra_ipmi" in keys
 
 
 def test_pikvm_binary_sensor_properties(mock_coordinator):
     """Test PiKVMBinarySensor properties, states, attributes, and availability."""
-    throttling_desc = next(d for d in BINARY_SENSOR_DESCRIPTIONS if d.key == "throttling")
+    throttling_desc = next(
+        d for d in BINARY_SENSOR_DESCRIPTIONS if d.key == "throttling"
+    )
     sensor = PiKVMBinarySensor(mock_coordinator, "test_uid", throttling_desc)
 
     assert sensor.unique_id == "test_uid_throttling"
@@ -157,7 +140,9 @@ def test_pikvm_binary_sensor_properties(mock_coordinator):
 
 def test_msd_binary_sensors(mock_coordinator):
     """Test MSD enabled and drive binary sensors."""
-    enabled_desc = next(d for d in BINARY_SENSOR_DESCRIPTIONS if d.key == "msd_enabled")
+    enabled_desc = next(
+        d for d in BINARY_SENSOR_DESCRIPTIONS if d.key == "msd_enabled"
+    )
     drive_desc = next(d for d in BINARY_SENSOR_DESCRIPTIONS if d.key == "msd_drive")
 
     sensor_enabled = PiKVMBinarySensor(mock_coordinator, "test_uid", enabled_desc)
@@ -182,12 +167,9 @@ def test_msd_binary_sensors(mock_coordinator):
 
 
 def test_pikvm_extra_binary_sensor(mock_coordinator):
-    """Test PiKVMExtraBinarySensor."""
-    extra_sensor = PiKVMExtraBinarySensor(
-        coordinator=mock_coordinator,
-        extra_name="vnc",
-        extra_data={"is_running": True, "port": 5900},
-        unique_id_base="test_uid",
+    """Test extra service binary sensor via _make_extra_description."""
+    extra_sensor = PiKVMBinarySensor(
+        mock_coordinator, "test_uid", _make_extra_description("vnc")
     )
 
     assert extra_sensor.unique_id == "test_uid_extra_vnc"
@@ -231,19 +213,18 @@ def test_pikvm_binary_sensor_name_fallback_and_available_fn_none(mock_coordinato
 
 def test_pikvm_binary_sensor_empty_attributes(mock_coordinator):
     """Test PiKVMBinarySensor when attributes_fn returns empty dictionary (branch coverage)."""
-    throttling_desc = next(d for d in BINARY_SENSOR_DESCRIPTIONS if d.key == "throttling")
+    throttling_desc = next(
+        d for d in BINARY_SENSOR_DESCRIPTIONS if d.key == "throttling"
+    )
     sensor = PiKVMBinarySensor(mock_coordinator, "test_uid", throttling_desc)
     mock_coordinator.data = {"hw": {"health": {"throttling": {}}}}
     assert sensor.extra_state_attributes == {"ip": "https://pikvm.local"}
 
 
 def test_pikvm_extra_binary_sensor_empty_attributes(mock_coordinator):
-    """Test PiKVMExtraBinarySensor when extra_data is empty dictionary (branch coverage)."""
-    extra_sensor = PiKVMExtraBinarySensor(
-        coordinator=mock_coordinator,
-        extra_name="vnc",
-        extra_data={},
-        unique_id_base="test_uid",
+    """Test extra binary sensor when extra_data is empty dictionary (branch coverage)."""
+    extra_sensor = PiKVMBinarySensor(
+        mock_coordinator, "test_uid", _make_extra_description("vnc")
     )
     mock_coordinator.data = {"extras": {"vnc": {}}}
     assert extra_sensor.extra_state_attributes == {"ip": "https://pikvm.local"}
@@ -261,11 +242,8 @@ def test_binary_sensor_entity_icon_is_none(mock_coordinator):
         sensor = PiKVMBinarySensor(mock_coordinator, "test_uid", desc)
         assert sensor.icon is None
 
-    extra_sensor = PiKVMExtraBinarySensor(
-        coordinator=mock_coordinator,
-        extra_name="vnc",
-        extra_data={"is_running": True},
-        unique_id_base="test_uid",
+    extra_sensor = PiKVMBinarySensor(
+        mock_coordinator, "test_uid", _make_extra_description("vnc")
     )
     assert extra_sensor.icon is None
 
@@ -288,7 +266,7 @@ async def test_binary_sensor_setup_entry_unknown_serial(hass, mock_coordinator):
     )
     assert ent_reg.async_get(existing_entity.entity_id) is not None
 
-    hass.data.setdefault(DOMAIN, {})[entry.entry_id] = mock_coordinator
+    entry.runtime_data = mock_coordinator
 
     mock_add_entities = MagicMock()
     with patch(
@@ -301,28 +279,13 @@ async def test_binary_sensor_setup_entry_unknown_serial(hass, mock_coordinator):
     assert ent_reg.async_get(existing_entity.entity_id) is not None
 
 
-@pytest.mark.asyncio
-async def test_cleanup_legacy_sensors_unknown_serial(hass, mock_coordinator):
-    """Test _async_cleanup_legacy_sensors skips cleanup when unique_id_base ends with _unknown."""
-    ent_reg = er.async_get(hass)
-    unique_id_base = "device_unknown"
-
-    old_entity = ent_reg.async_get_or_create(
-        "sensor",
-        DOMAIN,
-        f"{unique_id_base}_throttling",
-        suggested_object_id="pikvm_throttling_unknown",
-    )
-    assert ent_reg.async_get(old_entity.entity_id) is not None
-
-    _async_cleanup_legacy_sensors(hass, unique_id_base, mock_coordinator.data)
-    # Should still exist because cleanup returned early
-    assert ent_reg.async_get(old_entity.entity_id) is not None
-
-
-def test_binary_sensor_throttling_defensive_telemetry(mock_coordinator: MagicMock) -> None:
+def test_binary_sensor_throttling_defensive_telemetry(
+    mock_coordinator: MagicMock,
+) -> None:
     """Test throttling binary sensor handles missing, null, and malformed telemetry safely."""
-    throttling_desc = next(d for d in BINARY_SENSOR_DESCRIPTIONS if d.key == "throttling")
+    throttling_desc = next(
+        d for d in BINARY_SENSOR_DESCRIPTIONS if d.key == "throttling"
+    )
     sensor = PiKVMBinarySensor(mock_coordinator, "test_uid", throttling_desc)
 
     # 1. Null health -> unavailable, not on, empty extra attributes
@@ -346,20 +309,24 @@ def test_binary_sensor_throttling_defensive_telemetry(mock_coordinator: MagicMoc
     mock_coordinator.data = {"hw": {"health": {"throttling": {"raw_flags": None}}}}
     assert sensor.is_on is False
 
-    # 5. Non-numeric / boolean raw_flags -> is_on False
-    mock_coordinator.data = {"hw": {"health": {"throttling": {"raw_flags": True}}}}
-    assert sensor.is_on is False
+    # 5. Non-numeric / zero / negative raw_flags -> is_on False
     mock_coordinator.data = {"hw": {"health": {"throttling": {"raw_flags": False}}}}
     assert sensor.is_on is False
     mock_coordinator.data = {"hw": {"health": {"throttling": {"raw_flags": 0}}}}
     assert sensor.is_on is False
     mock_coordinator.data = {"hw": {"health": {"throttling": {"raw_flags": -1}}}}
     assert sensor.is_on is False
-    mock_coordinator.data = {"hw": {"health": {"throttling": {"raw_flags": "invalid_flags"}}}}
+    mock_coordinator.data = {
+        "hw": {"health": {"throttling": {"raw_flags": "invalid_flags"}}}
+    }
     assert sensor.is_on is False
-    mock_coordinator.data = {"hw": {"health": {"throttling": {"raw_flags": float("nan")}}}}
+    mock_coordinator.data = {
+        "hw": {"health": {"throttling": {"raw_flags": float("nan")}}}
+    }
     assert sensor.is_on is False
-    mock_coordinator.data = {"hw": {"health": {"throttling": {"raw_flags": float("inf")}}}}
+    mock_coordinator.data = {
+        "hw": {"health": {"throttling": {"raw_flags": float("inf")}}}
+    }
     assert sensor.is_on is False
 
     # 6. Non-mapping throttling -> attributes fallback to {"ip": ...}
@@ -376,7 +343,9 @@ def test_binary_sensor_throttling_defensive_telemetry(mock_coordinator: MagicMoc
 def test_binary_sensor_msd_defensive_telemetry(mock_coordinator: MagicMock) -> None:
     """Test MSD binary sensors handle null and malformed telemetry safely."""
     drive_desc = next(d for d in BINARY_SENSOR_DESCRIPTIONS if d.key == "msd_drive")
-    enabled_desc = next(d for d in BINARY_SENSOR_DESCRIPTIONS if d.key == "msd_enabled")
+    enabled_desc = next(
+        d for d in BINARY_SENSOR_DESCRIPTIONS if d.key == "msd_enabled"
+    )
     sensor_drive = PiKVMBinarySensor(mock_coordinator, "test_uid", drive_desc)
     sensor_enabled = PiKVMBinarySensor(mock_coordinator, "test_uid", enabled_desc)
 
@@ -394,20 +363,26 @@ def test_binary_sensor_msd_defensive_telemetry(mock_coordinator: MagicMock) -> N
     # 3. Non-mapping msd -> unavailable
     mock_coordinator.data = {"msd": "invalid_msd"}
     assert sensor_enabled.available is False
+    assert sensor_enabled.is_on is False
+    assert sensor_drive.is_on is False
 
-    # 4. Valid msd enabled
+    # 4. Unparseable data -> is_on False
+    mock_coordinator.data = "not_a_dict"
+    assert sensor_enabled.is_on is False
+    assert sensor_drive.is_on is False
+
+    # 5. Valid msd enabled
     mock_coordinator.data = {"msd": {"is_enabled": True}}
     assert sensor_enabled.available is True
     assert sensor_enabled.is_on is True
 
 
-def test_pikvm_extra_binary_sensor_defensive_telemetry(mock_coordinator: MagicMock) -> None:
-    """Test PiKVMExtraBinarySensor handles null and non-mapping service payloads safely."""
-    sensor = PiKVMExtraBinarySensor(
-        coordinator=mock_coordinator,
-        extra_name="vnc",
-        extra_data={"is_running": True},
-        unique_id_base="test_uid",
+def test_pikvm_extra_binary_sensor_defensive_telemetry(
+    mock_coordinator: MagicMock,
+) -> None:
+    """Test extra binary sensor handles null and non-mapping service payloads safely."""
+    sensor = PiKVMBinarySensor(
+        mock_coordinator, "test_uid", _make_extra_description("vnc")
     )
 
     # 1. Null extras mapping -> unavailable
@@ -443,8 +418,10 @@ def test_pikvm_extra_binary_sensor_defensive_telemetry(mock_coordinator: MagicMo
 
 
 @pytest.mark.asyncio
-async def test_binary_sensor_setup_and_cleanup_null_extras(hass: Any, mock_coordinator: MagicMock) -> None:
-    """Test async_setup_entry and _async_cleanup_legacy_sensors handle null extras safely."""
+async def test_binary_sensor_setup_and_cleanup_null_extras(
+    hass: Any, mock_coordinator: MagicMock
+) -> None:
+    """Test async_setup_entry handles null extras safely."""
     entry = MockConfigEntry(
         domain=DOMAIN,
         entry_id="mock_entry_null_extras",
@@ -452,7 +429,7 @@ async def test_binary_sensor_setup_and_cleanup_null_extras(hass: Any, mock_coord
     )
     entry.add_to_hass(hass)
     mock_coordinator.data = {"extras": None}
-    hass.data.setdefault(DOMAIN, {})[entry.entry_id] = mock_coordinator
+    entry.runtime_data = mock_coordinator
 
     mock_add_entities = MagicMock()
     await async_setup_entry(hass, entry, mock_add_entities)
@@ -478,12 +455,10 @@ async def test_binary_sensor_setup_and_cleanup_null_extras(hass: Any, mock_coord
     entities = mock_add_entities.call_args[0][0]
     assert len(entities) == 5
 
-    # Cleanup with null extras should not raise TypeError
-    _async_cleanup_legacy_sensors(hass, "sn_null_extras", {"extras": None})
-    _async_cleanup_legacy_sensors(hass, "sn_null_extras", {"extras": 12345})
 
-
-def test_pikvm_binary_sensor_attributes_fn_non_mapping(mock_coordinator: MagicMock) -> None:
+def test_pikvm_binary_sensor_attributes_fn_non_mapping(
+    mock_coordinator: MagicMock,
+) -> None:
     """Test PiKVMBinarySensor when attributes_fn returns non-mapping truthy value."""
     desc = PiKVMBinarySensorEntityDescription(
         key="test_custom",
@@ -498,19 +473,25 @@ def test_pikvm_binary_sensor_attributes_fn_non_mapping(mock_coordinator: MagicMo
 def test_helper_functions_direct() -> None:
     """Test defensive helper functions directly for edge cases."""
     # _get_throttling_attributes
-    assert _get_throttling_attributes({"hw": {"health": {"throttling": {"flag": 1}}}}) == {"flag": 1}
+    assert _get_throttling_attributes(
+        {"hw": {"health": {"throttling": {"flag": 1}}}}
+    ) == {"flag": 1}
     assert _get_throttling_attributes({"hw": {"health": {"throttling": None}}}) == {}
     assert _get_throttling_attributes({}) == {}
 
     # _get_msd_drive_attributes
-    assert _get_msd_drive_attributes({"msd": {"drive": {"is_mounted": True}}}) == {"is_mounted": True}
+    assert _get_msd_drive_attributes({"msd": {"drive": {"is_mounted": True}}}) == {
+        "is_mounted": True
+    }
     assert _get_msd_drive_attributes({"msd": {"drive": None}}) == {}
     assert _get_msd_drive_attributes({}) == {}
 
     # _is_throttling_on
-    assert _is_throttling_on({"hw": {"health": {"throttling": {"raw_flags": 4}}}}) is True
-    assert _is_throttling_on({"hw": {"health": {"throttling": {"raw_flags": 0}}}}) is False
+    assert (
+        _is_throttling_on({"hw": {"health": {"throttling": {"raw_flags": 4}}}}) is True
+    )
+    assert (
+        _is_throttling_on({"hw": {"health": {"throttling": {"raw_flags": 0}}}}) is False
+    )
     assert _is_throttling_on({}) is False
-
-
-
+    assert _is_throttling_on("invalid") is False

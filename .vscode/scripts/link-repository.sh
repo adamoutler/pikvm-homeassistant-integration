@@ -15,13 +15,13 @@ if [ ! -d /config/custom_components ]; then
 fi
 
 # Unlink /config/custom_components/pikvm if it's a symbolic link
-if [ -L /config/custom_components/pikvm_ha ]; then
-  unlink /config/custom_components/pikvm_ha
+if [ -L /config/custom_components/pikvm ]; then
+  unlink /config/custom_components/pikvm
 fi
 
 # Check if /config/custom_components/pikvm folder already exists
-if [ -d /config/custom_components/pikvm_ha ]; then
-  echo "/config/custom_components/pikvm_ha folder already exists"
+if [ -d /config/custom_components/pikvm ]; then
+  echo "/config/custom_components/pikvm folder already exists"
   exit 1
 fi
 
@@ -32,7 +32,7 @@ if [ ! -d custom_components ]; then
 fi
 
 # Create symbolic link
-ln -s "$(pwd)/custom_components/pikvm_ha" /config/custom_components/pikvm_ha
+ln -s "$(pwd)/custom_components/pikvm" /config/custom_components/pikvm
 echo "Linking Successful"
 
 # Reload Home Assistant

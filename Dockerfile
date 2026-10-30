@@ -2,7 +2,7 @@ FROM homeassistant/home-assistant:latest
 
 # Copy the custom component into the container
 # This will be overridden by the volume mount in docker-compose
-COPY custom_components/pikvm_ha /config/custom_components/pikvm_ha
+COPY custom_components/pikvm /config/custom_components/pikvm
 
 # Expose the default Home Assistant port
 EXPOSE 8123

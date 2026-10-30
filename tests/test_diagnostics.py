@@ -15,9 +15,27 @@ from custom_components.pikvm.const import (
     DOMAIN,
 )
 from custom_components.pikvm.diagnostics import (
+    TO_REDACT,
     async_get_config_entry_diagnostics,
     async_get_device_diagnostics,
 )
+
+
+def test_diagnostics_redact_set_contains_required_keys():
+    """Verify TO_REDACT includes all sensitive credential and session keys."""
+    for required in (
+        CONF_PASSWORD,
+        CONF_TOTP,
+        CONF_CERTIFICATE,
+        "password",
+        "totp",
+        "token",
+        "secret",
+        "api_key",
+        "cookie",
+        "jwt",
+    ):
+        assert required in TO_REDACT
 
 
 @pytest.mark.asyncio
@@ -47,7 +65,7 @@ async def test_diagnostics_with_coordinator(hass):
         "system": {"version": "3.1"},
     }
 
-    hass.data.setdefault(DOMAIN, {})[entry.entry_id] = mock_coordinator
+    entry.runtime_data = mock_coordinator
 
     diagnostics = await async_get_config_entry_diagnostics(hass, entry)
 
@@ -68,7 +86,7 @@ async def test_diagnostics_with_coordinator(hass):
 
 @pytest.mark.asyncio
 async def test_diagnostics_without_coordinator(hass):
-    """Test diagnostics output when coordinator is not in hass.data."""
+    """Test diagnostics output when coordinator is not set on runtime_data."""
     entry = MockConfigEntry(
         domain=DOMAIN,
         unique_id="pikvm_999",
@@ -79,9 +97,6 @@ async def test_diagnostics_without_coordinator(hass):
         },
     )
     entry.add_to_hass(hass)
-
-    # Ensure DOMAIN has no coordinator for this entry
-    hass.data.setdefault(DOMAIN, {})
 
     diagnostics = await async_get_config_entry_diagnostics(hass, entry)
     assert diagnostics["config_entry"]["data"][CONF_PASSWORD] == "**REDACTED**"
@@ -107,7 +122,7 @@ async def test_diagnostics_with_dict_data_and_none_data(hass):
     mock_coordinator.update_interval = "0:00:30"
     mock_coordinator.data = {"hw": {"serial": "123"}}
 
-    hass.data.setdefault(DOMAIN, {})[entry.entry_id] = mock_coordinator
+    entry.runtime_data = mock_coordinator
 
     diagnostics = await async_get_config_entry_diagnostics(hass, entry)
     assert diagnostics["coordinator"]["data"] == {"hw": {"serial": "123"}}
@@ -137,7 +152,7 @@ async def test_diagnostics_with_non_dict_non_raw_data(hass):
     mock_coordinator.update_interval = "0:00:30"
     mock_coordinator.data = "unexpected_scalar"
 
-    hass.data.setdefault(DOMAIN, {})[entry.entry_id] = mock_coordinator
+    entry.runtime_data = mock_coordinator
 
     diagnostics = await async_get_config_entry_diagnostics(hass, entry)
     assert diagnostics["coordinator"]["data"] is None
@@ -177,9 +192,7 @@ async def test_device_diagnostics_with_device_registry(hass):
         "system": {"version": "3.1"},
     }
 
-    # Exercise config_entry.runtime_data
     entry.runtime_data = mock_coordinator
-    hass.data.setdefault(DOMAIN, {})[entry.entry_id] = mock_coordinator
 
     dev_reg = dr.async_get(hass)
     device = dev_reg.async_get_or_create(
@@ -214,24 +227,24 @@ async def test_device_diagnostics_with_device_registry(hass):
     assert coord_diag["data"]["auth"]["api_key"] == "**REDACTED**"
     assert coord_diag["data"]["system"]["version"] == "3.1"
 
-    # 3. Verify extracted device attributes
+    # 3. Verify extracted device attributes via dict_repr
     dev_diag = diagnostics["device"]
     assert dev_diag["id"] == device.id
     assert dev_diag["name"] == device.name
     assert dev_diag["name_by_user"] == "Custom PiKVM Name"
-    assert [DOMAIN, "pikvm_123456"] in dev_diag["identifiers"]
-    assert [dr.CONNECTION_NETWORK_MAC, "aa:bb:cc:dd:ee:ff"] in dev_diag["connections"]
+    assert (DOMAIN, "pikvm_123456") in dev_diag["identifiers"]
+    assert (dr.CONNECTION_NETWORK_MAC, "aa:bb:cc:dd:ee:ff") in dev_diag["connections"]
     assert dev_diag["manufacturer"] == "PiKVM"
     assert dev_diag["model"] == "V3.3"
     assert dev_diag["sw_version"] == "3.100"
     assert dev_diag["hw_version"] == "Raspberry Pi 4"
     assert dev_diag["serial_number"] == "pikvm_123456"
-    assert dev_diag["disabled"] is False
+    assert dev_diag["disabled_by"] is None
 
 
 @pytest.mark.asyncio
 async def test_device_diagnostics_disabled_device(hass):
-    """Test device diagnostics reports disabled status correctly when device is disabled."""
+    """Test device diagnostics reports disabled_by status correctly when device is disabled."""
     from homeassistant.helpers import device_registry as dr
 
     entry = MockConfigEntry(
@@ -247,42 +260,10 @@ async def test_device_diagnostics_disabled_device(hass):
         identifiers={(DOMAIN, "pikvm_disabled")},
         name="Disabled PiKVM",
     )
-    dev_reg.async_update_device(
-        device.id, disabled_by=dr.DeviceEntryDisabler.USER
-    )
+    dev_reg.async_update_device(device.id, disabled_by=dr.DeviceEntryDisabler.USER)
     device = dev_reg.async_get(device.id)
 
     diagnostics = await async_get_device_diagnostics(hass, entry, device)
 
     assert diagnostics["device"]["id"] == device.id
-    assert diagnostics["device"]["disabled"] is True
-
-
-@pytest.mark.asyncio
-async def test_device_diagnostics_minimal_fallback(hass):
-    """Test device diagnostics fallback handling when device object has minimal or missing attributes."""
-    entry = MockConfigEntry(
-        domain=DOMAIN,
-        unique_id="pikvm_min",
-        data={CONF_HOST: "https://pikvm.local", CONF_USERNAME: "admin"},
-    )
-    entry.add_to_hass(hass)
-
-    mock_device = MagicMock(spec=[])
-    mock_device.id = "mock_minimal_id"
-
-    diagnostics = await async_get_device_diagnostics(hass, entry, mock_device)
-
-    dev_diag = diagnostics["device"]
-    assert dev_diag["id"] == "mock_minimal_id"
-    assert dev_diag["name"] is None
-    assert dev_diag["name_by_user"] is None
-    assert dev_diag["identifiers"] == []
-    assert dev_diag["connections"] == []
-    assert dev_diag["manufacturer"] is None
-    assert dev_diag["model"] is None
-    assert dev_diag["sw_version"] is None
-    assert dev_diag["hw_version"] is None
-    assert dev_diag["serial_number"] is None
-    assert dev_diag["disabled"] is False
-
+    assert diagnostics["device"]["disabled_by"] == dr.DeviceEntryDisabler.USER
