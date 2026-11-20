@@ -542,14 +542,14 @@ async def test_reauth_flow_success(hass, pikvm_cert):
             user_input={
                 CONF_USERNAME: "admin",
                 CONF_PASSWORD: "new_password",
-                CONF_TOTP: "JBSWY3DPEHPK3PXP",
+                CONF_TOTP: "JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP",
             },
         )
 
     assert result2["type"] == FlowResultType.ABORT
     assert result2["reason"] == "reauth_successful"
     assert entry.data[CONF_PASSWORD] == "new_password"
-    assert entry.data[CONF_TOTP] == "JBSWY3DPEHPK3PXP"
+    assert entry.data[CONF_TOTP] == "JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP"
 
 
 @pytest.mark.asyncio
@@ -698,7 +698,7 @@ async def test_reauth_flow_totp_repopulates_when_empty_and_fails(hass, pikvm_cer
       rejects because 2FA is no longer enabled on the device.
     - Reauth fails and the key is not cleared.
     """
-    existing_totp_key = "JBSWY3DPEHPK3PXP"
+    existing_totp_key = "JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP"
     entry = MockConfigEntry(
         domain=DOMAIN,
         title="PiKVM Lab",
@@ -776,7 +776,7 @@ async def test_reauth_flow_clear_totp_with_space_workaround(hass, pikvm_cert):
     - No TOTP code is appended, so the device authentication succeeds.
     - Reauth succeeds and CONF_TOTP is updated to "" in the config entry.
     """
-    existing_totp_key = "JBSWY3DPEHPK3PXP"
+    existing_totp_key = "JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP"
     entry = MockConfigEntry(
         domain=DOMAIN,
         title="PiKVM Lab",
@@ -851,7 +851,7 @@ async def test_reauth_schema_totp_default_serialization(hass, pikvm_cert):
     """
     import voluptuous_serialize
 
-    existing_totp_key = "JBSWY3DPEHPK3PXP"
+    existing_totp_key = "JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP"
     entry = MockConfigEntry(
         domain=DOMAIN,
         title="PiKVM Lab",
@@ -1524,7 +1524,7 @@ async def test_reconfigure_flow_complete_lifecycle(hass, pikvm_cert):
             CONF_PASSWORD: "old_password",
             CONF_SERIAL: "sn_reconf_123",
             CONF_CERTIFICATE: pikvm_cert,
-            CONF_TOTP: "JBSWY3DPEHPK3PXP",
+            CONF_TOTP: "JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP",
         },
     )
     entry.add_to_hass(hass)

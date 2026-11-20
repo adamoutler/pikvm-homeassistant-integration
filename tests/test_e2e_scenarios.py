@@ -169,7 +169,7 @@ def e2e_entry(pikvm_cert: str) -> MockConfigEntry:
             CONF_PASSWORD: "initial_password",
             CONF_SERIAL: "sn_e2e_001",
             CONF_CERTIFICATE: pikvm_cert,
-            CONF_TOTP: "JBSWY3DPEHPK3PXP",
+            CONF_TOTP: "JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP",
         },
         options={CONF_SCAN_INTERVAL: 30},
     )
@@ -240,7 +240,7 @@ async def test_tier3_reauth_after_coordinator_auth_failure(
             user_input={
                 CONF_USERNAME: "admin",
                 CONF_PASSWORD: "rotated_secret_password",
-                CONF_TOTP: "JBSWY3DPEHPK3PXP",
+                CONF_TOTP: "JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP",
             },
         )
         assert reauth_res["type"] == FlowResultType.ABORT
@@ -550,7 +550,7 @@ async def test_tier3_empty_totp_clears_stored_2fa(
 ):
     """Tier 3.9: Submitting whitespace or empty string in reconfigure removes stored TOTP key."""
     e2e_entry.add_to_hass(hass)
-    assert e2e_entry.data[CONF_TOTP] == "JBSWY3DPEHPK3PXP"
+    assert e2e_entry.data[CONF_TOTP] == "JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP"
 
     init_res = await hass.config_entries.flow.async_init(
         DOMAIN, context={"source": SOURCE_RECONFIGURE, "entry_id": e2e_entry.entry_id}
@@ -900,7 +900,7 @@ async def test_tier4_scenario3_credential_rotation_and_reauth_e2e(
     assert reauth_init["type"] == FlowResultType.FORM
     assert reauth_init["step_id"] == "reauth_confirm"
 
-    new_totp = "MFRGGZDFMY======"
+    new_totp = "MFRGGZDFMZTWQ2LKNNWG23TPOBYXE43U"
     with (
         patch(
             "custom_components.pikvm.config_flow.fetch_serialized_cert",

@@ -71,7 +71,7 @@ async def test_coordinator_authentication_error(hass):
         url="https://pikvm.local",
         username="admin",
         password="bad_password",
-        totp="JBSWY3DPEHPK3PXP",
+        totp="JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP",
         cert="",
     )
 
