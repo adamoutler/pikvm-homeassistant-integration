@@ -141,15 +141,16 @@ def make_pikvm_telemetry(
         "system": {"kvmd": {"version": "3.102"}},
         "meta": {"server": {"host": host, "name": f"PiKVM {serial}"}},
         "extras": {
-            "ipmi": {"is_running": ipmi_running},
-            "vnc": {"is_running": vnc_running},
-            "webterm": {"is_running": webterm_running},
-            "janus": {"is_running": janus_running},
+            "ipmi": {"enabled": ipmi_running, "started": ipmi_running},
+            "vnc": {"enabled": vnc_running, "started": vnc_running},
+            "webterm": {"enabled": webterm_running, "started": webterm_running},
+            "janus": {"enabled": janus_running, "started": janus_running},
         },
         "msd": {
             "storage": {"total": msd_total, "available": msd_available},
-            "drive": {"is_mounted": msd_mounted},
-            "is_enabled": msd_enabled,
+            "drive": {"connected": msd_mounted},
+            "enabled": msd_enabled,
+            "online": True,
         },
     }
     return PiKVMDeviceInfo.from_dict(payload)

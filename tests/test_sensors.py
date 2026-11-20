@@ -60,8 +60,9 @@ def mock_coordinator():
             },
         },
         "msd": {
-            "is_enabled": True,
-            "drive": {"is_mounted": True},
+            "enabled": True,
+            "online": True,
+            "drive": {"connected": True},
             "storage": {
                 "available": 987654321,
                 "total": 1000000000,

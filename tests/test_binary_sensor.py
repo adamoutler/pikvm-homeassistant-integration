@@ -17,6 +17,7 @@ from custom_components.pikvm.binary_sensor import (
     PiKVMBinarySensorEntityDescription,
     _get_msd_drive_attributes,
     _get_throttling_attributes,
+    _is_extra_running,
     _is_throttling_on,
     _make_extra_description,
     async_setup_entry,
@@ -41,15 +42,19 @@ def mock_coordinator():
             }
         },
         "msd": {
-            "is_enabled": True,
+            "enabled": True,
+            "online": True,
             "drive": {
-                "is_mounted": True,
+                "connected": True,
+                "cdrom": True,
+                "rw": False,
+                "image": None,
                 "mode": "ro",
             },
         },
         "extras": {
-            "vnc": {"is_running": True, "port": 5900},
-            "ipmi": {"is_running": False},
+            "vnc": {"enabled": True, "started": True, "port": 5900},
+            "ipmi": {"enabled": False, "started": False},
         },
     }
     return coordinator
@@ -480,8 +485,8 @@ def test_helper_functions_direct() -> None:
     assert _get_throttling_attributes({}) == {}
 
     # _get_msd_drive_attributes
-    assert _get_msd_drive_attributes({"msd": {"drive": {"is_mounted": True}}}) == {
-        "is_mounted": True
+    assert _get_msd_drive_attributes({"msd": {"drive": {"connected": True}}}) == {
+        "connected": True
     }
     assert _get_msd_drive_attributes({"msd": {"drive": None}}) == {}
     assert _get_msd_drive_attributes({}) == {}
@@ -495,3 +500,109 @@ def test_helper_functions_direct() -> None:
     )
     assert _is_throttling_on({}) is False
     assert _is_throttling_on("invalid") is False
+
+    # _is_extra_running
+    assert _is_extra_running({"enabled": True, "started": True}) is True
+    assert _is_extra_running({"enabled": True, "started": False}) is False
+    assert _is_extra_running({"enabled": False, "started": False}) is False
+    assert _is_extra_running({"enabled": True}) is True
+    assert _is_extra_running({"enabled": False}) is False
+    assert _is_extra_running({"is_running": True}) is True
+    assert _is_extra_running({"is_running": False}) is False
+    assert _is_extra_running({}) is False
+
+
+def test_real_kvmd_and_legacy_msd_payloads(mock_coordinator: MagicMock) -> None:
+    """Test msd_enabled and msd_drive with real KVMD payloads and legacy keys."""
+    enabled_desc = next(
+        d for d in BINARY_SENSOR_DESCRIPTIONS if d.key == "msd_enabled"
+    )
+    drive_desc = next(d for d in BINARY_SENSOR_DESCRIPTIONS if d.key == "msd_drive")
+
+    sensor_enabled = PiKVMBinarySensor(mock_coordinator, "test_uid", enabled_desc)
+    sensor_drive = PiKVMBinarySensor(mock_coordinator, "test_uid", drive_desc)
+
+    # Real KVMD msd payload (connected=True)
+    mock_coordinator.data = {
+        "msd": {
+            "enabled": True,
+            "online": True,
+            "drive": {
+                "connected": True,
+                "cdrom": True,
+                "rw": False,
+                "image": None,
+            },
+        }
+    }
+    assert sensor_enabled.is_on is True
+    assert sensor_drive.is_on is True
+
+    # Real KVMD msd payload (connected=False, enabled=False)
+    mock_coordinator.data = {
+        "msd": {
+            "enabled": False,
+            "online": True,
+            "drive": {
+                "connected": False,
+                "cdrom": True,
+                "rw": False,
+                "image": None,
+            },
+        }
+    }
+    assert sensor_enabled.is_on is False
+    assert sensor_drive.is_on is False
+
+    # Legacy msd payload with is_enabled and is_mounted
+    mock_coordinator.data = {
+        "msd": {
+            "is_enabled": True,
+            "drive": {
+                "is_mounted": True,
+            },
+        }
+    }
+    assert sensor_enabled.is_on is True
+    assert sensor_drive.is_on is True
+
+    mock_coordinator.data = {
+        "msd": {
+            "is_enabled": False,
+            "drive": {
+                "is_mounted": False,
+            },
+        }
+    }
+    assert sensor_enabled.is_on is False
+    assert sensor_drive.is_on is False
+
+
+def test_real_kvmd_and_legacy_extras_payloads(mock_coordinator: MagicMock) -> None:
+    """Test extra service binary sensor with real KVMD and legacy payloads."""
+    sensor = PiKVMBinarySensor(
+        mock_coordinator, "test_uid", _make_extra_description("vnc")
+    )
+
+    # {"enabled": True, "started": True} -> is_on is True
+    mock_coordinator.data = {"extras": {"vnc": {"enabled": True, "started": True}}}
+    assert sensor.is_on is True
+
+    # {"enabled": True, "started": False} -> is_on is False
+    mock_coordinator.data = {"extras": {"vnc": {"enabled": True, "started": False}}}
+    assert sensor.is_on is False
+
+    # {"enabled": False, "started": False} -> is_on is False
+    mock_coordinator.data = {"extras": {"vnc": {"enabled": False, "started": False}}}
+    assert sensor.is_on is False
+
+    # {"enabled": True} (no started key) -> is_on is True
+    mock_coordinator.data = {"extras": {"vnc": {"enabled": True}}}
+    assert sensor.is_on is True
+
+    # Legacy {"is_running": True} and {"is_running": False}
+    mock_coordinator.data = {"extras": {"vnc": {"is_running": True}}}
+    assert sensor.is_on is True
+
+    mock_coordinator.data = {"extras": {"vnc": {"is_running": False}}}
+    assert sensor.is_on is False

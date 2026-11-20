@@ -58,6 +58,15 @@ def _get_msd_drive_attributes(data: Any) -> dict[str, Any]:
     return dict(drive) if isinstance(drive, Mapping) else {}
 
 
+def _is_extra_running(extra_data: Mapping[str, Any]) -> bool:
+    """Return True if a PiKVM extra service is running."""
+    if (started := extra_data.get("started")) is not None:
+        return bool(started)
+    if (is_running := extra_data.get("is_running")) is not None:
+        return bool(is_running)
+    return bool(extra_data.get("enabled", False))
+
+
 def _make_extra_description(extra_name: str) -> PiKVMBinarySensorEntityDescription:
     """Create a binary sensor description for a PiKVM extra service."""
     return PiKVMBinarySensorEntityDescription(
@@ -65,8 +74,8 @@ def _make_extra_description(extra_name: str) -> PiKVMBinarySensorEntityDescripti
         translation_key=f"extra_{extra_name}",
         device_class=BinarySensorDeviceClass.RUNNING,
         entity_category=EntityCategory.DIAGNOSTIC,
-        is_on_fn=lambda data: bool(
-            d.get("is_running", False)
+        is_on_fn=lambda data: (
+            _is_extra_running(d)
             if (info := ensure_device_info(data))
             and isinstance(d := info.extras.get(extra_name), Mapping)
             else False
@@ -111,7 +120,7 @@ BINARY_SENSOR_DESCRIPTIONS: tuple[PiKVMBinarySensorEntityDescription, ...] = (
         device_class=BinarySensorDeviceClass.CONNECTIVITY,
         entity_category=EntityCategory.DIAGNOSTIC,
         is_on_fn=lambda data: (
-            bool(info.msd.drive.is_mounted)
+            bool(info.msd.drive.connected or info.msd.drive.is_mounted)
             if (info := ensure_device_info(data))
             else False
         ),
